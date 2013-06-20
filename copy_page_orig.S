@@ -29,7 +29,7 @@
  * Note that we probably achieve closer to the 100MB/s target with
  * the core clock switching.
  */
-ENTRY(copy_page_orig)
+ENTRY(kernel_copy_page_orig)
 		stmfd	sp!, {r4, lr}			@	2
 	PLD(	pld	[r1, #0]		)
 	PLD(	pld	[r1, #L1_CACHE_BYTES]		)
@@ -49,4 +49,4 @@ ENTRY(copy_page_orig)
 	PLD(	ldmeqia r1!, {r3, r4, ip, lr}	)
 	PLD(	beq	2b			)
 		ldmfd	sp!, {r4, pc}			@	3
-ENDPROC(copy_page_orig)
+ENDPROC(kernel_copy_page_orig)

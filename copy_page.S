@@ -50,15 +50,15 @@
  * Note that we probably achieve closer to the 100MB/s target with
  * the core clock switching.
  */
-ENTRY(copy_page)
+ENTRY(kernel_copy_page)
 		stmfd	sp!, {r4-r8, lr}		@	2
 	PLD(	pld	[r1, #0]		)
 	PLD(	pld	[r1, #L1_CACHE_BYTES]		)
-.if PREFETCH_DISTANCE >= 2
+.if PREFETCH_DISTANCE > 2
 	PLD(	pld	[r1, #2 * L1_CACHE_BYTES]	)
-.if PREFETCH_DISTANCE >= 3
+.if PREFETCH_DISTANCE > 3
 	PLD(	pld	[r1, #3 * L1_CACHE_BYTES]	)
-.if PREFETCH_DISTANCE >= 4
+.if PREFETCH_DISTANCE > 4
 	PLD(	pld	[r1, #4 * L1_CACHE_BYTES]	)
 .endif
 .endif
@@ -78,15 +78,15 @@ ENTRY(copy_page)
 		ldmia   r1!, {r3-r8, ip, lr}
 	PLD(	sub	r2, r2, #1		)	@	1
 	NO_PLD(	subs	r2, r2, #1		)	@	1
-		stmia	r0!, {r3-r8, ip, lr}	@	4
+		stmia	r0!, {r3-r8, ip, lr}		@	4
 		ldmia   r1!, {r3-r8, ip, lr}
 	PLD(	cmp	r2, #PREFETCH_DISTANCE	)
-		stmia	r0!, {r3-r8, ip, lr}	@	4
+		stmia	r0!, {r3-r8, ip, lr}		@	4
 .endif
 	PLD(	bgt	1b			)	@	1
 	NO_PLD(	bne	1b			)
 	PLD(	teq	r2, #0			)
 	PLD(	bne	2b			)
 		ldmfd	sp!, {r4-r8, pc}		@	3
-ENDPROC(copy_page)
+ENDPROC(kernel_copy_page)
 

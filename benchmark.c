@@ -49,12 +49,12 @@ double test_duration = DEFAULT_TEST_DURATION;
 int memcpy_mask[NU_MEMCPY_VARIANTS];
 
 static memcpy_func_type copy_page_wrapper(void *dest, const void *src, size_t n) {
-	copy_page(dest, src);
+	kernel_copy_page(dest, src);
 	return dest;
 }
 
 static memcpy_func_type copy_page_orig_wrapper(void *dest, const void *src, size_t n) {
-	copy_page_orig(dest, src);
+	kernel_copy_page_orig(dest, src);
 	return dest;
 }
 
@@ -471,11 +471,22 @@ static void fill_buffer(uint8_t *buffer) {
 }
 
 static int compare_buffers(uint8_t *buffer0, uint8_t *buffer1) {
+    int identical = 1;
+    int count = 0;
     for (int i = 0; i < 1024 * 1024 * 16; i++) {
-        if (buffer0[i] != buffer1[i])
-            return 0;
+        if (buffer0[i] != buffer1[i]) {
+            count++;
+	    if (count < 10) {
+                printf("Byte at offset %d (0x%08X) doesn't match.\n",
+                    i, i);
+                identical = 0;
+            }
+	}
     }
-    return 1;
+    if (count >= 10) {
+        printf("(%d more non-matching bytes present.)\n", count - 9);
+    }
+    return identical;
 }
 
 static void memcpy_emulate(uint8_t *dest, uint8_t *src, int size) {
@@ -486,13 +497,23 @@ static void memcpy_emulate(uint8_t *dest, uint8_t *src, int size) {
 static void do_validation(int repeat) {
     int passed = 1;
     for (int i = 0; i < 10 * repeat; i++)  {
-        int size = floor(pow(2.0, (double)rand() * 20.0 / RAND_MAX));
-        int source = rand() % (1024 * 1024 * 16 + 1 - size);
-        int dest;
-        do {
-            dest = rand() % (1024 * 1024 * 16 + 1 - size);
+        int size, source, dest;
+        if (memcpy_func == copy_page_wrapper ||
+        memcpy_func == copy_page_orig_wrapper) {
+            size = 4096;
+            source = 4096 * (rand() % (1024 * 1024 * 16 / 4096));
+            do {
+                dest = 4096 * (rand() % (1024 * 1024 * 16 / 4096));
+            } while (dest == source);
         }
-        while (dest + size > source && dest < source + size);
+        else {
+            size = floor(pow(2.0, (double)rand() * 20.0 / RAND_MAX));
+            source = rand() % (1024 * 1024 * 16 + 1 - size);
+            do {
+                dest = rand() % (1024 * 1024 * 16 + 1 - size);
+            }
+            while (dest + size > source && dest < source + size);
+        }
         printf("Testing (source offset = 0x%08X, destination offset = 0x%08X, size = %d).\n",
                 source, dest, size);
         fflush(stdout);

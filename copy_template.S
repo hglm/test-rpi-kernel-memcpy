@@ -70,15 +70,16 @@
 		enter	r4, lr
 
 		subs	r2, r2, #4
+		bic     r3, r1, #31
 		blt	8f
 		ands	ip, r0, #3
-	PLD(	pld	[r1, #0]		)
+	PLD(	pld	[r3]			)
 		bne	9f
 		ands	ip, r1, #3
 		bne	10f
 
 1:		subs	r2, r2, #(28)
-		stmfd	sp!, {r5 - r8}
+		stmfd	sp!, {r5 - r9}
 		blt	5f
 
 	CALGN(	ands	ip, r0, #31		)
@@ -90,17 +91,21 @@
 	CALGN(	add	pc, r4, ip		)
 
 	PLD(	pld	[r1, #0]		)
-2:	PLD(	subs	r2, r2, #PREFETCH_DISTANCE * 32)
-	PLD(	pld	[r1, #32]		)
+2:
+		add     r9, r1, #PREFETCH_DISTANCE * 32
+		bic     r3, r9, #31
+	PLD(	subs	r2, r2, #PREFETCH_DISTANCE * 32)
+		sub	r9, r3, r1
 	PLD(	blt	4f			)
-.if PREFETCH_DISTANCE >= 3
-	PLD(	pld	[r1, #64]		)
 .if PREFETCH_DISTANCE >= 4
-	PLD(	pld	[r1, #96]		)
+	PLD(	pld	[r3, #-96]		)
+.if PREFETCH_DISTANCE >= 3
+	PLD(	pld	[r3, #-64]		)
 .endif
 .endif
+	PLD(	pld	[r3, #-32]		)
 
-3:	PLD(	pld	[r1, #PREFETCH_DISTANCE * 32]	)
+3:	PLD(	pld	[r1, r9]		)
 4:		ldr8w	r1, r3, r4, r5, r6, r7, r8, ip, lr, abort=20f
 		subs	r2, r2, #32
 		str4w	r0, r3, r4, r5, r6, abort=20f
@@ -148,7 +153,7 @@
 
 	CALGN(	bcs	2b			)
 
-7:		ldmfd	sp!, {r5 - r8}
+7:		ldmfd	sp!, {r5 - r9}
 
 8:		movs	r2, r2, lsl #31
 		ldr1b	r1, r3, ne, abort=21f
@@ -191,16 +196,22 @@
 	CALGN(	subcc	r2, r2, ip		)
 	CALGN(	bcc	15f			)
 
-11:		stmfd	sp!, {r5 - r9}
+11:		stmfd	sp!, {r5 - r10}
 
-	PLD(	pld	[r1, #0]		)
-	PLD(	subs	r2, r2, #96		)
-	PLD(	pld	[r1, #28]		)
-	PLD(	blt	13f			)
-	PLD(	pld	[r1, #60]		)
-	PLD(	pld	[r1, #92]		)
+                add     r10, r1, #PREFETCH_DISTANCE * 32
+                bic     r3, r10, #31
+        PLD(    subs    r2, r2, #PREFETCH_DISTANCE * 32)
+                sub     r10, r3, r1
+        PLD(    blt     13f                     )
+.if PREFETCH_DISTANCE >= 4
+        PLD(    pld     [r3, #-96]              )
+.if PREFETCH_DISTANCE >= 3
+        PLD(    pld     [r3, #-64]              )
+.endif
+.endif
+        PLD(    pld     [r3, #-32]              )
 
-12:	PLD(	pld	[r1, #124]		)
+12:	PLD(	pld	[r1, r10]		)
 13:		ldr4w	r1, r4, r5, r6, r7, abort=19f
 		mov	r3, lr, pull #\pull
 		subs	r2, r2, #32
@@ -222,10 +233,10 @@
 		orr	ip, ip, lr, push #\push
 		str8w	r0, r3, r4, r5, r6, r7, r8, r9, ip, , abort=19f
 		bge	12b
-	PLD(	cmn	r2, #96			)
-	PLD(	bge	13b			)
+	PLD(	cmn	r2, #PREFETCH_DISTANCE * 32	)
+	PLD(	bge	13b				)
 
-		ldmfd	sp!, {r5 - r9}
+		ldmfd	sp!, {r5 - r10}
 
 14:		ands	ip, r2, #28
 		beq	16f
@@ -262,7 +273,7 @@
 	.macro	copy_abort_preamble
 19:	ldmfd	sp!, {r5 - r9}
 	b	21f
-20:	ldmfd	sp!, {r5 - r8}
+20:	ldmfd	sp!, {r5 - r9}
 21:
 	.endm
 
