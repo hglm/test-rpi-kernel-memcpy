@@ -1,6 +1,6 @@
 
 #define PLD(code...) code
-#ifdef SUNXI
+#ifdef ARMV7
 #define __LINUX_ARM_ARCH__ 7
 #define L1_CACHE_BYTES 64
 #else
@@ -15,7 +15,7 @@
 
 #define CALGN(code...)
 
-#define pull            lsl
-#define push            lsr
+#define pull            lsr
+#define push            lsl
 #define W(instr)        instr
 

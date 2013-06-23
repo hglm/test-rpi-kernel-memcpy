@@ -80,6 +80,12 @@
  *
  *      The prefetch distance in units of L1_CACHE_BYTES used for prefetches.
  *
+ * WRITE_ALIGN_BYTES
+ *
+ *      Write aligning is enabled if the CALGN macro expands to instructions
+ *      instead of nothing. When enabled, WRITE_ALIGN_BYTES defines the number
+ *      of bytes to align to (it must be 16 or 32).
+ *
  */
 
 		enter	r4, lr
@@ -97,11 +103,46 @@
 		stmfd	sp!, {r5 - r9}
 		blt	5f
 
-	CALGN(	ands	ip, r0, #31		)
-	CALGN(	rsb	r3, ip, #32		)
+	/*
+         * When we get here:
+         * dest is 4-byte aligned
+         * r2 = memcpy_size - 32
+	 * r2 is guaranteed to be >= 0
+         *
+         * ip = dest & 31
+	 * r3 = number of bytes to copy in order to align, or 32
+	 *      if ip == 0.
+         * C flag is set
+         * if (ip != 0), r4 = r3 - r2
+         * The use of the sbcnes instruction is a little confusing, it
+         * could be replaced by subnes because the C flag is always set
+         * prior to the instruction; the only requirement is that the
+         * C flag is updated which is also accomplished by subnes.
+	 * Skip alignment code if C is set, which is true if:
+	 *     (1) ip == 0
+	 *     (2) r3 >= r2
+         * Decrease the number of bytes by r3
+         * Jump to the aligment code at address (6f + ip)
+         *
+         * In practice, for 32 <= memcpy_size < 64, the alignment code
+         * will be skipped if <alignment_bytes> >= (memcpy_size - 32)
+         * so 32 non-cache line aligned bytes will be copied in the main
+         * loop.
+         *
+         * For armv7, with L1_CACHE_BYTES == 64, a size of 64 will trigger
+         * the alignment code (slow word-by-word copies), skip the main loop
+	 * (unless the destination is 32-bytes aligned), trigger the tail
+         * code for 32 remaining bytes, and finally the tail code for the
+         * remaining up to 31 bytes.
+         */
+	CALGN(	ands	ip, r0, #(WRITE_ALIGN_BYTES - 1)	)
+	CALGN(	rsb	r3, ip, #WRITE_ALIGN_BYTES		)
 	CALGN(	sbcnes	r4, r3, r2		)  @ C is always set here
 	CALGN(	bcs	2f			)
 	CALGN(	adr	r4, 6f			)
+.if WRITE_ALIGN_BYTES == 16
+	CALGN(  add	ip, ip, #16		)
+.endif
 	CALGN(	subs	r2, r2, r3		)  @ C gets set
 	CALGN(	add	pc, r4, ip		)
 
@@ -226,8 +267,8 @@
 		subs	r2, r2, #28
 		blt	14f
 
-	CALGN(	ands	ip, r0, #31		)
-	CALGN(	rsb	ip, ip, #32		)
+	CALGN(	ands	ip, r0, #(WRITE_ALIGN_BYTES - 1)	)
+	CALGN(	rsb	ip, ip, #WRITE_ALIGN_BYTES		)
 	CALGN(	sbcnes	r4, ip, r2		)  @ C is always set here
 	CALGN(	subcc	r2, r2, ip		)
 	CALGN(	bcc	15f			)
@@ -241,9 +282,9 @@
         PLD(    blt     13f                     )
 .if PREFETCH_DISTANCE >= 4
 	PLD(	pld	[r3, #(- 3 * L1_CACHE_BYTES)]	)
+.endif
 .if PREFETCH_DISTANCE >= 3
 	PLD(	pld	[r3, #(- 2 * L1_CACHE_BYTES)]	)
-.endif
 .endif
 	PLD(	pld	[r3, #(- L1_CACHE_BYTES)]	)
 
