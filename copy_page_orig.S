@@ -9,7 +9,7 @@
  *
  *  ASM optimised string functions
  */
-#include "kernel_defines.h"
+#include "kernel_defines_orig.h"
 
 .macro asm_function function_name
     .global \function_name

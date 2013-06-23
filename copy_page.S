@@ -9,7 +9,6 @@
  *
  *  ASM optimised string functions
  */
-
 #include "kernel_defines.h"
 
 /*
@@ -20,27 +19,11 @@
  * The prefetch distance is set to 3 (96 bytes).
  *
  * This version should also be usable on architectures other than
- * armv6 with properly defined L1_CACHE_BYTES and PREFETCH_DISTANCE.
+ * armv6 with properly defined L1_CACHE_BYTES and PREFETCH_DISTANCE
+ * (e.g. armv7 with L1_CACHE_BYTES == 64).
  */
 
-
-#define PREFETCH_DISTANCE 3
 #define COPY_COUNT (PAGE_SZ / (L1_CACHE_BYTES))
-
-#if __LINUX_ARM_ARCH__ >= 5
-#define NO_PLD(code...)
-#else
-#define NO_PLD(code...)	code
-#endif
-
-.macro asm_function function_name
-    .global \function_name
-.func \function_name
-.type \function_name, function
-.p2align 5
-\function_name:
-.endm
-
 
 		.text
 		.p2align	5
@@ -89,4 +72,3 @@ ENTRY(kernel_copy_page)
 	PLD(	bne	2b			)
 		ldmfd	sp!, {r4-r8, pc}		@	3
 ENDPROC(kernel_copy_page)
-

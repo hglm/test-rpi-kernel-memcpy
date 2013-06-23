@@ -1,16 +1,41 @@
 
+#ifdef SUNXI
+#define __LINUX_ARM_ARCH__ 7
+#define L1_CACHE_BYTES 64
+#else
 #define __LINUX_ARM_ARCH__ 6
-#define PLD(code...) code
 #define L1_CACHE_BYTES 32
+#endif
+
+#define PREFETCH_DISTANCE 3
 #define PAGE_SZ 4096
+
+#define PLD(code...) code
+#define NO_PLD(code...)
 
 #define ENTRY(proc) asm_function proc
 
 #define ENDPROC(proc) .endfunc
 
+#if _LINUX_ARM_ARCH__ == 6
 #define CALGN(code...) code
+#else
+#define CALGN(code...)
+#endif
+#if _LINUX_ARM_ARCH__ >= 7
+#define CALGN_MEMSET(code...) code
+#else
+#define CALGN_MEMSET(code...)
+#endif
 
 #define pull            lsl
 #define push            lsr
 #define W(instr)        instr
 
+.macro asm_function function_name
+    .global \function_name
+.func \function_name
+.type \function_name, function
+.p2align 5
+\function_name:
+.endm

@@ -64,13 +64,28 @@
  *	Correction to be applied to the "ip" register when branching into
  *	the ldr1w or str1w instructions (some of these macros may expand to
  *	than one 32bit instruction in Thumb-2)
+ *
+ * L1_CACHE_BYTES
+ *
+ *      The cache line size used for prefetches. Preloads are performed at
+ *      L1_CACHE_BYTES aligned addresses. However, if L1_CACHE_BYTES == 64,
+ *      in the case of unaligned copies preload instructions are performed
+ *      at 32 bytes aligned addresses. The code could be modified to strictly
+ *      preload at 64 bytes aligned addresses, at the cost of increasing code
+ *      size and complexity. However, the armv7 architecture doesn't seem
+ *      to incur a big penalty for the unnecessary preload instructions.
+ *      Additionally unaligned copies are rare.
+ *
+ * PREFETCH_DISTANCE
+ *
+ *      The prefetch distance in units of L1_CACHE_BYTES used for prefetches.
+ *
  */
-
 
 		enter	r4, lr
 
 		subs	r2, r2, #4
-		bic     r3, r1, #31
+		bic     r3, r1, #(L1_CACHE_BYTES - 1)
 		blt	8f
 		ands	ip, r0, #3
 	PLD(	pld	[r3]			)
@@ -90,29 +105,50 @@
 	CALGN(	subs	r2, r2, r3		)  @ C gets set
 	CALGN(	add	pc, r4, ip		)
 
-	PLD(	pld	[r1, #0]		)
 2:
-		add     r9, r1, #PREFETCH_DISTANCE * 32
-		bic     r3, r9, #31
-	PLD(	subs	r2, r2, #PREFETCH_DISTANCE * 32)
-		sub	r9, r3, r1
+.if L1_CACHE_BYTES == 64
+		subs    r2, r2, #32
+		blt     30f
+.endif
+	PLD(	add     r9, r1, #(PREFETCH_DISTANCE * L1_CACHE_BYTES)	)
+	PLD(	bic     r3, r9, #(L1_CACHE_BYTES - 1)			)
+	PLD(	subs	r2, r2, #(PREFETCH_DISTANCE * L1_CACHE_BYTES)	)
+	PLD(	sub	r9, r3, r1		)
 	PLD(	blt	4f			)
 .if PREFETCH_DISTANCE >= 4
-	PLD(	pld	[r3, #-96]		)
+	PLD(	pld	[r3, #(- 3 * L1_CACHE_BYTES)]	)
 .if PREFETCH_DISTANCE >= 3
-	PLD(	pld	[r3, #-64]		)
+	PLD(	pld	[r3, #(- 2 * L1_CACHE_BYTES)]	)
 .endif
 .endif
-	PLD(	pld	[r3, #-32]		)
+	PLD(	pld	[r3, #(- L1_CACHE_BYTES)]	)
 
+.if L1_CACHE_BYTES == 32
 3:	PLD(	pld	[r1, r9]		)
 4:		ldr8w	r1, r3, r4, r5, r6, r7, r8, ip, lr, abort=20f
 		subs	r2, r2, #32
 		str4w	r0, r3, r4, r5, r6, abort=20f
 		str4w   r0, r7, r8, ip, lr, abort=20f
 		bge	3b
-	PLD(	cmn	r2, #PREFETCH_DISTANCE * 32	)
+	PLD(	cmn	r2, #(PREFETCH_DISTANCE * 32)	)
 	PLD(	bge	4b			)
+.else /* L1_CACHE_BYTES == 64 */
+3:		pld	[r1, r9]
+4:		ldr8w	r1, r3, r4, r5, r6, r7, r8, ip, lr, abort=20f
+		subs	r2, r2, #64
+		str8w	r0, r3, r4, r5, r6, r7, r8, ip, lr, abort=20f
+		ldr8w	r1, r3, r4, r5, r6, r7, r8, ip, lr, abort=20f
+		str8w	r0, r3, r4, r5, r6, r7, r8, ip, lr, abort=20f
+		bge	3b
+		cmn	r2, #(PREFETCH_DISTANCE * 64)
+		bge	4b
+
+30:		tst     r2, #32
+		beq	31f
+		ldr8w	r1, r3, r4, r5, r6, r7, r8, ip, lr, abort=20f
+		str8w	r0, r3, r4, r5, r6, r7, r8, ip, lr, abort=20f
+31:
+.endif
 
 5:		ands	ip, r2, #28
 		rsb	ip, ip, #32
@@ -198,18 +234,18 @@
 
 11:		stmfd	sp!, {r5 - r10}
 
-                add     r10, r1, #PREFETCH_DISTANCE * 32
-                bic     r3, r10, #31
-        PLD(    subs    r2, r2, #PREFETCH_DISTANCE * 32)
-                sub     r10, r3, r1
+        PLD(    add     r10, r1, #(PREFETCH_DISTANCE * L1_CACHE_BYTES)	)
+        PLD(    bic     r3, r10, #(L1_CACHE_BYTES - 1)	)
+        PLD(    subs    r2, r2, #(PREFETCH_DISTANCE * 32)	)
+        PLD(    sub     r10, r3, r1		)
         PLD(    blt     13f                     )
 .if PREFETCH_DISTANCE >= 4
-        PLD(    pld     [r3, #-96]              )
+	PLD(	pld	[r3, #(- 3 * L1_CACHE_BYTES)]	)
 .if PREFETCH_DISTANCE >= 3
-        PLD(    pld     [r3, #-64]              )
+	PLD(	pld	[r3, #(- 2 * L1_CACHE_BYTES)]	)
 .endif
 .endif
-        PLD(    pld     [r3, #-32]              )
+	PLD(	pld	[r3, #(- L1_CACHE_BYTES)]	)
 
 12:	PLD(	pld	[r1, r10]		)
 13:		ldr4w	r1, r4, r5, r6, r7, abort=19f
@@ -233,7 +269,7 @@
 		orr	ip, ip, lr, push #\push
 		str8w	r0, r3, r4, r5, r6, r7, r8, r9, ip, , abort=19f
 		bge	12b
-	PLD(	cmn	r2, #PREFETCH_DISTANCE * 32	)
+	PLD(	cmn	r2, #(PREFETCH_DISTANCE * 32)	)
 	PLD(	bge	13b				)
 
 		ldmfd	sp!, {r5 - r10}

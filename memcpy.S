@@ -12,17 +12,6 @@
 
 #include "kernel_defines.h"
 
-#define PREFETCH_DISTANCE 3
-
-.macro asm_function function_name
-    .global \function_name
-.func \function_name
-.type \function_name, function
-.p2align 5
-\function_name:
-.endm
-
-
 #define LDR1W_SHIFT	0
 #define STR1W_SHIFT	0
 
