@@ -86,6 +86,12 @@
  *      instead of nothing. When enabled, WRITE_ALIGN_BYTES defines the number
  *      of bytes to align to (it must be 16 or 32).
  *
+ * REGULAR_MEMCPY
+ *
+ *      When REGULAR_MEMCPY is defined, there no need to use single word
+ *      loads and stores in the alignment and tail parts for the word aligned
+ *      case. This results in a measurable speed-up for modern ARM platforms.
+ *
  */
 
 		enter	r4, lr
@@ -139,12 +145,27 @@
 	CALGN(	rsb	r3, ip, #WRITE_ALIGN_BYTES		)
 	CALGN(	sbcnes	r4, r3, r2		)  @ C is always set here
 	CALGN(	bcs	2f			)
+#ifdef REGULAR_MEMCPY
+	CALGN(	tst     r3, #4			)
+	CALGN(	ldrne   r4, [r1], #4		)
+	CALGN(	strne   r4, [r0], #4		)
+	CALGN(	tst     r3, #8			)
+	CALGN(  ldmneia r1!, {r4-r5}		)
+	CALGN(	sub     r2, r2, r3		)
+	CALGN(	stmneia r0!, {r4-r5}		)
+.if WRITE_ALIGN_BYTES == 32
+	CALGN(	tst	r3, #16			)
+	CALGN(	ldmneia r1!, {r4-r7}		)
+	CALGN(	stmneia r0!, {r4-r7}		)
+.endif
+#else
 	CALGN(	adr	r4, 6f			)
 .if WRITE_ALIGN_BYTES == 16
 	CALGN(  add	ip, ip, #16		)
 .endif
 	CALGN(	subs	r2, r2, r3		)  @ C gets set
 	CALGN(	add	pc, r4, ip		)
+#endif
 
 2:
 .if L1_CACHE_BYTES == 64
@@ -191,7 +212,20 @@
 31:
 .endif
 
-5:		ands	ip, r2, #28
+5:
+#ifdef REGULAR_MEMCPY
+		tst     r2, #16
+		ldmneia r1!, {r4-r7}
+		stmneia r0!, {r4-r7}
+		tst     r2, #8
+		ldmneia r1!, {r4-r5}
+		stmneia r0!, {r4-r5}
+		tst     r2, #4
+		ldrne   r4, [r1], #4
+		strne   r4, [r0], #4
+		b	7f
+#else
+		ands	ip, r2, #28
 		rsb	ip, ip, #32
 #if LDR1W_SHIFT > 0
 		lsl	ip, ip, #LDR1W_SHIFT
@@ -229,6 +263,7 @@
 		str1w	r0, lr, abort=20f
 
 	CALGN(	bcs	2b			)
+#endif	/* defined(REGULAR_MEMCPY) */
 
 7:		ldmfd	sp!, {r5 - r9}
 

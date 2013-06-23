@@ -17,9 +17,13 @@
 
 #define ENDPROC(proc) .endfunc
 
-#if __LINUX_ARM_ARCH__ == 6
+#if __LINUX_ARM_ARCH__ >= 6
 #define CALGN(code...) code
+#if __LINUX_ARM_ARCH__ == 6
 #define WRITE_ALIGN_BYTES 16
+#else
+#define WRITE_ALIGN_BYTES 32
+#endif
 #else
 #define CALGN(code...)
 #endif
