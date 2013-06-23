@@ -117,9 +117,9 @@
 	PLD(	blt	4f			)
 .if PREFETCH_DISTANCE >= 4
 	PLD(	pld	[r3, #(- 3 * L1_CACHE_BYTES)]	)
+.endif
 .if PREFETCH_DISTANCE >= 3
 	PLD(	pld	[r3, #(- 2 * L1_CACHE_BYTES)]	)
-.endif
 .endif
 	PLD(	pld	[r3, #(- L1_CACHE_BYTES)]	)
 
