@@ -20,7 +20,7 @@
 #if __LINUX_ARM_ARCH__ >= 6
 #define CALGN(code...) code
 #if __LINUX_ARM_ARCH__ == 6
-#define WRITE_ALIGN_BYTES 16
+#define WRITE_ALIGN_BYTES 32
 #else
 #define WRITE_ALIGN_BYTES 32
 #endif
