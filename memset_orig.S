@@ -9,10 +9,12 @@
  *
  *  ASM optimised string functions
  */
-#include "kernel_defines.h"
+
+#include "kernel_defines_orig.h"
 
 	.text
 	.align	5
+	.word	0
 
 1:	subs	r2, r2, #4		@ 1 do we have enough
 	blt	5f			@ 1 bytes to align with?
@@ -21,33 +23,30 @@
 	strleb	r1, [r0], #1		@ 1
 	strb	r1, [r0], #1		@ 1
 	add	r2, r2, r3		@ 1 (r2 = r2 - (4 - r3))
-	b	6f
 /*
  * The pointer is now aligned and the length is adjusted.  Try doing the
  * memset again.
- * Note: There is no need to recheck for alignment; by branching over the
- * alignment check we can push r0 and lr in the entry code.
  */
 
-ENTRY(kernel_memset)
+ENTRY(kernel_memset_orig)
 	ands	r3, r0, #3		@ 1 unaligned?
-	stmfd	sp!, {r0, lr}
 	bne	1b			@ 1
 /*
  * we know that the pointer in r0 is aligned to a word boundary.
  */
-6:	orr	r1, r1, r1, lsl #8
-	cmp	r2, #16
+	orr	r1, r1, r1, lsl #8
 	orr	r1, r1, r1, lsl #16
 	mov	r3, r1
+	cmp	r2, #16
 	blt	4f
 
-#if ! CALGN_MEMSET(1)+0
+#if ! CALGN(1)+0
 
 /*
  * We need an extra register for this loop - save the return address and
  * use the LR
  */
+	str	lr, [sp, #-4]!
 	mov	ip, r1
 	mov	lr, r1
 
@@ -57,7 +56,7 @@ ENTRY(kernel_memset)
 	stmgeia	r0!, {r1, r3, ip, lr}
 	stmgeia	r0!, {r1, r3, ip, lr}
 	bgt	2b
-	ldmeqfd	sp!, {r0, pc}		@ Now <64 bytes to go.
+	ldmeqfd	sp!, {pc}		@ Now <64 bytes to go.
 /*
  * No need to correct the count; we're only testing bits from now on
  */
@@ -66,51 +65,48 @@ ENTRY(kernel_memset)
 	stmneia	r0!, {r1, r3, ip, lr}
 	tst	r2, #16
 	stmneia	r0!, {r1, r3, ip, lr}
+	ldr	lr, [sp], #4
 
 #else
 
 /*
  * This version aligns the destination pointer in order to write
  * whole cache lines at once.
- *
- * However, at least some architectures don't like writing 32 bytes
- * at a time. Since it's unlikely that it will hurt performance,
- * write 16 bytes at a time, eliminating save/restore of extra
- * registers on the stack.
  */
 
-	cmp	r2, #64
+	stmfd	sp!, {r4-r7, lr}
+	mov	r4, r1
+	mov	r5, r1
+	mov	r6, r1
+	mov	r7, r1
 	mov	ip, r1
 	mov	lr, r1
-	blt	7f
-	tst	r0, #31
-	beq	3f
+
+	cmp	r2, #96
+	tstgt	r0, #31
+	ble	3f
 
 	and	ip, r0, #31
 	rsb	ip, ip, #32
 	sub	r2, r2, ip
 	movs	ip, ip, lsl #(32 - 4)
-	stmcsia	r0!, {r1, r3}
-	stmcsia r0!, {r1, r3}
-	stmmiia	r0!, {r1, r3}
+	stmcsia	r0!, {r4, r5, r6, r7}
+	stmmiia	r0!, {r4, r5}
 	tst	ip, #(1 << 30)
-	mov	ip, r3
+	mov	ip, r1
 	strne	r1, [r0], #4
 
-3:	
-	subs	r2, r2, #64
-	stmgeia	r0!, {r1, r3, ip, lr}
-	stmgeia	r0!, {r1, r3, ip, lr}
-	stmgeia	r0!, {r1, r3, ip, lr}
-	stmgeia	r0!, {r1, r3, ip, lr}
+3:	subs	r2, r2, #64
+	stmgeia	r0!, {r1, r3-r7, ip, lr}
+	stmgeia	r0!, {r1, r3-r7, ip, lr}
 	bgt	3b
-	ldmeqfd	sp!, {r0, pc}
+	ldmeqfd	sp!, {r4-r7, pc}
 
-7:	tst	r2, #32
-	stmneia	r0!, {r1, r3, ip, lr}
-	stmneia	r0!, {r1, r3, ip, lr}
+	tst	r2, #32
+	stmneia	r0!, {r1, r3-r7, ip, lr}
 	tst	r2, #16
-	stmneia	r0!, {r1, r3, ip, lr}
+	stmneia	r0!, {r4-r7}
+	ldmfd	sp!, {r4-r7, lr}
 
 #endif
 
@@ -126,6 +122,6 @@ ENTRY(kernel_memset)
 	strneb	r1, [r0], #1
 	strneb	r1, [r0], #1
 	tst	r2, #1
-	strneb	r1, [r0]
-	ldmfd	sp!, {r0, pc}
-ENDPROC(kernel_memset)
+	strneb	r1, [r0], #1
+	mov	pc, lr
+ENDPROC(memset)

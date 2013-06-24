@@ -27,7 +27,7 @@
 #else
 #define CALGN(code...)
 #endif
-#if __LINUX_ARM_ARCH__ >= 7
+#if __LINUX_ARM_ARCH__ == 6
 #define CALGN_MEMSET(code...) code
 #else
 #define CALGN_MEMSET(code...)
@@ -41,6 +41,5 @@
     .global \function_name
 .func \function_name
 .type \function_name, function
-.p2align 5
 \function_name:
 .endm

@@ -57,6 +57,7 @@
 	.endm
 
 	.text
+	.p2align 5
 
 /* Prototype: void *memcpy(void *dest, const void *src, size_t n); */
 
