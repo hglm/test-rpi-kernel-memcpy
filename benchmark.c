@@ -38,15 +38,19 @@
 #define RANDOM_BUFFER_SIZE 256
 
 #define NU_MEMCPY_VARIANTS 5
+#define NU_MEMSET_VARIANTS 5
 
 typedef void *(*memcpy_func_type)(void *dest, const void *src, size_t n);
+typedef void *(*memset_func_type)(void *dest, int c, size_t n);
 
 memcpy_func_type memcpy_func;
+memset_func_type memset_func;
 uint8_t *buffer_alloc, *buffer_chunk, *buffer_page, *buffer_compare;
 int *random_buffer_1024, *random_buffer_1M, *random_buffer_powers_of_two_up_to_4096_power_law;
 int *random_buffer_multiples_of_four_up_to_1024_power_law, *random_buffer_up_to_1023_power_law;
 double test_duration = DEFAULT_TEST_DURATION;
 int memcpy_mask[NU_MEMCPY_VARIANTS];
+int memset_mask[NU_MEMSET_VARIANTS];
 
 static memcpy_func_type copy_page_wrapper(void *dest, const void *src, size_t n) {
 	kernel_copy_page(dest, src);
@@ -72,6 +76,32 @@ static const memcpy_func_type memcpy_variant[NU_MEMCPY_VARIANTS] = {
     kernel_memcpy,
     copy_page_orig_wrapper,
     copy_page_wrapper
+};
+
+static memset_func_type memzero_orig_wrapper(void *dest, int c, size_t n) {
+    __kernel_memzero_orig(dest, n);
+    return dest;
+}
+
+static memset_func_type memzero_wrapper(void *dest, int c, size_t n) {
+    __kernel_memzero(dest, n);
+    return dest;
+}
+
+static const char *memset_variant_name[NU_MEMSET_VARIANTS] = {
+    "standard memset",
+    "kernel memset (original)",
+    "kernel memset (optimized)",
+    "kernel memzero (original)",
+    "kernel memzero (optimized)",
+};
+
+static const memcpy_func_type memset_variant[NU_MEMSET_VARIANTS] = {
+    memset,
+    kernel_memset_orig,
+    kernel_memset,
+    memzero_orig_wrapper,
+    memzero_wrapper
 };
 
 static double get_time() {
@@ -415,6 +445,16 @@ static void test_random_mixed_sizes_DRAM_word_aligned_64(int i) {
         4 + (random_buffer_1024[((i * 4 + 2) & (RANDOM_BUFFER_SIZE - 1))] & 60));
 }
 
+static void test_memset_page_aligned_1024(int i) {
+    memset_func(buffer_page + random_buffer_1024[(i * 2) & (RANDOM_BUFFER_SIZE - 1)] * 4096,
+        random_buffer_1024[(i * 2 + 1) & (RANDOM_BUFFER_SIZE - 1)] & 0xFF, 1024);
+}
+
+static void test_memset_page_aligned_4096(int i) {
+    memset_func(buffer_page + random_buffer_1024[(i * 2) & (RANDOM_BUFFER_SIZE - 1)] * 4096,
+        random_buffer_1024[(i * 2 + 1) & (RANDOM_BUFFER_SIZE - 1)] & 0xFF, 4096);
+}
+
 static void clear_data_cache() {
     int val = 0;
     for (int i = 0; i < 1024 * 1024 * 32; i += 4) {
@@ -532,6 +572,39 @@ static void do_validation(int repeat) {
     }
 }
 
+static void memset_emulate(uint8_t *dest, int c, int size) {
+    for (int i = 0; i < size; i++)
+        dest[i] = c;
+}
+
+static void do_validation_memset(int repeat) {
+    int passed = 1;
+    for (int i = 0; i < 10 * repeat; i++)  {
+        int size, dest, c;
+        size = floor(pow(2.0, (double)rand() * 20.0 / RAND_MAX));
+        dest = rand() % (1024 * 1024 * 16 + 1 - size);
+        if (memset_func == memzero_orig_wrapper || memset_func == memzero_wrapper)
+            c = 0;
+        else
+            c = rand() * 0xFF;
+        printf("Testing (destination offset = 0x%08X, byte = %d, size = %d).\n",
+                dest, c, size);
+        fflush(stdout);
+        fill_buffer(buffer_compare);
+        memset_emulate(buffer_compare + dest, c, size);
+        fill_buffer(buffer_alloc);
+        memset_func(buffer_alloc + dest, c, size);
+        if (!compare_buffers(buffer_alloc, buffer_compare)) {
+            printf("Validation failed (destination offset = 0x%08X, size = %d).\n",
+                dest, size);
+            passed = 0;
+        }
+    }
+    if (passed) {
+        printf("Passed.\n");
+    }
+}
+
 #define NU_TESTS 48
 
 typedef struct {
@@ -600,6 +673,13 @@ static test_t test[NU_TESTS] = {
     { "8M bytes page aligned", test_page_aligned_8M, 8 * 1024 * 1024 },
 };
 
+#define NU_MEMSET_TESTS 2
+
+static test_t memset_test[NU_MEMSET_TESTS] = {
+    { "1024 bytes page aligned", test_memset_page_aligned_1024, 1024 },
+    { "4096 bytes page aligned", test_memset_page_aligned_4096, 4096 },
+};
+
 static void usage() {
             printf("Commands:\n"
                 "--list          List test numbers and memcpy variants.\n"
@@ -644,6 +724,8 @@ int main(int argc, char *argv[]) {
     int validate = 0;
     for (int i = 0; i < NU_MEMCPY_VARIANTS; i++)
         memcpy_mask[i] = 1;
+    for (int i = 0; i < NU_MEMSET_VARIANTS; i++)
+        memset_mask[i] = 1;
     for (;;) {
         if (argi >= argc)
             break;
@@ -712,6 +794,15 @@ int main(int argc, char *argv[]) {
         if (strcasecmp(argv[argi], "--validate") == 0) {
             validate = 1;
             argi++;
+            continue;
+        }
+        if (argi + 1 < argc && strcasecmp(argv[argi], "--memset") == 0) {
+            for (int i = 0; i < NU_MEMSET_VARIANTS; i++)
+                memset_mask[i] = 0;
+            for (int i = 0; i < strlen(argv[argi + 1]); i++)
+                if (char_to_memcpy_variant(argv[argi + 1][i]) >= 0 && char_to_memcpy_variant(argv[argi + 1][i]) < NU_MEMSET_VARIANTS)
+                    memset_mask[char_to_memcpy_variant(argv[argi + 1][i])] = 1;
+            argi += 2;
             continue;
         }
         printf("Unkown option. Try --help.\n");
@@ -793,6 +884,12 @@ int main(int argc, char *argv[]) {
                 memcpy_func = memcpy_variant[j];
                 do_validation(repeat);
             }
+        for (int j = 0; j < NU_MEMSET_VARIANTS; j++)
+            if (memset_mask[j]) {
+                printf("%s:\n", memset_variant_name[j]);
+                memset_func = memset_variant[j];
+                do_validation_memset(repeat);
+            }
         return 0;
     }
     for (int t = start_test; t <= end_test; t++) {
@@ -802,6 +899,15 @@ int main(int argc, char *argv[]) {
                 memcpy_func = memcpy_variant[j];
                 for (int i = 0; i < repeat; i++)
                     do_test(test[t].name, test[t].test_func, test[t].bytes);
+            }
+    }
+    for (int t = 0; t <= 0; t++) {
+        for (int j = 0; j < NU_MEMSET_VARIANTS; j++)
+            if (memset_mask[j]) {
+                printf("%s:\n", memset_variant_name[j]);
+                memset_func = memset_variant[j];
+                for (int i = 0; i < repeat; i++)
+                    do_test(memset_test[t].name, memset_test[t].test_func, memset_test[t].bytes);
             }
     }
 }

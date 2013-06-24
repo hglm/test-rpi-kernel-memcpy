@@ -1,0 +1,34 @@
+Notes on the start of the alignment code in copy_template.S line 112:
+
+	/*
+         * When we get here:
+         * dest is 4-byte aligned
+         * r2 = memcpy_size - 32
+	 * r2 is guaranteed to be >= 0
+         *
+         * ip = dest & 31
+	 * r3 = number of bytes to copy in order to align, or 32
+	 *      if ip == 0.
+         * C flag is set
+         * if (ip != 0), r4 = r3 - r2
+         * The use of the sbcnes instruction is a little confusing, it
+         * could be replaced by subnes because the C flag is always set
+         * prior to the instruction; the only requirement is that the
+         * C flag is updated which is also accomplished by subnes.
+	 * Skip alignment code if C is set, which is true if:
+	 *     (1) ip == 0
+	 *     (2) r3 >= r2
+         * Decrease the number of bytes by r3
+         * Jump to the aligment code at address (6f + ip)
+         *
+         * In practice, for 32 <= memcpy_size < 64, the alignment code
+         * will be skipped if <alignment_bytes> >= (memcpy_size - 32)
+         * so 32 non-cache line aligned bytes will be copied in the main
+         * loop.
+         *
+         * For armv7, with L1_CACHE_BYTES == 64, a size of 64 will trigger
+         * the alignment code (slow word-by-word copies), skip the main loop
+	 * (unless the destination is 32-bytes aligned), trigger the tail
+         * code for 32 remaining bytes, and finally the tail code for the
+         * remaining up to 31 bytes.
+         */
