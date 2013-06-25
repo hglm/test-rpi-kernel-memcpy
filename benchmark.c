@@ -51,6 +51,7 @@ int *random_buffer_multiples_of_four_up_to_1024_power_law, *random_buffer_up_to_
 double test_duration = DEFAULT_TEST_DURATION;
 int memcpy_mask[NU_MEMCPY_VARIANTS];
 int memset_mask[NU_MEMSET_VARIANTS];
+int test_alignment;
 
 static memcpy_func_type copy_page_wrapper(void *dest, const void *src, size_t n) {
 	kernel_copy_page(dest, src);
@@ -473,6 +474,108 @@ static void test_memset_mixed_power_law_unaligned(int i) {
         random_buffer_up_to_1023_power_law[i & (RANDOM_BUFFER_SIZE - 1)]);
 }
 
+static void test_memset_aligned_4(int i) {
+    memset_func(buffer_page + random_buffer_1024[(i * 2) & (RANDOM_BUFFER_SIZE - 1)] * 4,
+        random_buffer_1024[(i * 2 + 1) & (RANDOM_BUFFER_SIZE - 1)] & 0xFF,
+        4);
+}
+
+static void test_memset_aligned_8(int i) {
+    memset_func(buffer_page + random_buffer_1024[(i * 2) & (RANDOM_BUFFER_SIZE - 1)] * 4,
+        random_buffer_1024[(i * 2 + 1) & (RANDOM_BUFFER_SIZE - 1)] & 0xFF,
+        8);
+}
+
+static void test_memset_aligned_16(int i) {
+    memset_func(buffer_page + random_buffer_1024[(i * 2) & (RANDOM_BUFFER_SIZE - 1)] * 4,
+        random_buffer_1024[(i * 2 + 1) & (RANDOM_BUFFER_SIZE - 1)] & 0xFF,
+        16);
+}
+
+static void test_memset_aligned_28(int i) {
+    memset_func(buffer_page + random_buffer_1024[(i * 2) & (RANDOM_BUFFER_SIZE - 1)] * 4,
+        random_buffer_1024[(i * 2 + 1) & (RANDOM_BUFFER_SIZE - 1)] & 0xFF,
+        28);
+}
+
+static void test_memset_aligned_32(int i) {
+    memset_func(buffer_page + random_buffer_1024[(i * 2) & (RANDOM_BUFFER_SIZE - 1)] * 4,
+        random_buffer_1024[(i * 2 + 1) & (RANDOM_BUFFER_SIZE - 1)] & 0xFF,
+        32);
+}
+
+static void test_memset_aligned_64(int i) {
+    memset_func(buffer_page + random_buffer_1024[(i * 2) & (RANDOM_BUFFER_SIZE - 1)] * 4,
+        random_buffer_1024[(i * 2 + 1) & (RANDOM_BUFFER_SIZE - 1)] & 0xFF,
+        64);
+}
+
+static void test_memset_various_aligned_64(int i) {
+    memset_func(buffer_page + random_buffer_1024[(i * 2) & (RANDOM_BUFFER_SIZE - 1)] * 32 + test_alignment,
+        random_buffer_1024[(i * 2 + 1) & (RANDOM_BUFFER_SIZE - 1)] & 0xFF,
+        64);
+}
+
+static void test_memset_aligned_80(int i) {
+    memset_func(buffer_page + random_buffer_1024[(i * 2) & (RANDOM_BUFFER_SIZE - 1)] * 4,
+        random_buffer_1024[(i * 2 + 1) & (RANDOM_BUFFER_SIZE - 1)] & 0xFF,
+        80);
+}
+
+static void test_memset_aligned_92(int i) {
+    memset_func(buffer_page + random_buffer_1024[(i * 2) & (RANDOM_BUFFER_SIZE - 1)] * 4,
+        random_buffer_1024[(i * 2 + 1) & (RANDOM_BUFFER_SIZE - 1)] & 0xFF,
+        92);
+}
+
+static void test_memset_aligned_128(int i) {
+    memset_func(buffer_page + random_buffer_1024[(i * 2) & (RANDOM_BUFFER_SIZE - 1)] * 4,
+        random_buffer_1024[(i * 2 + 1) & (RANDOM_BUFFER_SIZE - 1)] & 0xFF,
+        128);
+}
+
+static void test_memset_aligned_256(int i) {
+    memset_func(buffer_page + random_buffer_1024[(i * 2) & (RANDOM_BUFFER_SIZE - 1)] * 4,
+        random_buffer_1024[(i * 2 + 1) & (RANDOM_BUFFER_SIZE - 1)] & 0xFF,
+        256);
+}
+
+static void test_memset_unaligned_random_3(int i) {
+    memset_func(buffer_page + random_buffer_1024[(i * 2) & (RANDOM_BUFFER_SIZE - 1)],
+        random_buffer_1024[(i * 2 + 1) & (RANDOM_BUFFER_SIZE - 1)] & 0xFF,
+        3);
+}
+
+static void test_memset_unaligned_random_8(int i) {
+    memset_func(buffer_page + random_buffer_1024[(i * 2) & (RANDOM_BUFFER_SIZE - 1)],
+        random_buffer_1024[(i * 2 + 1) & (RANDOM_BUFFER_SIZE - 1)] & 0xFF,
+        8);
+}
+
+static void test_memset_unaligned_random_17(int i) {
+    memset_func(buffer_page + random_buffer_1024[(i * 2) & (RANDOM_BUFFER_SIZE - 1)],
+        random_buffer_1024[(i * 2 + 1) & (RANDOM_BUFFER_SIZE - 1)] & 0xFF,
+        17);
+}
+
+static void test_memset_unaligned_random_28(int i) {
+    memset_func(buffer_page + random_buffer_1024[(i * 2) & (RANDOM_BUFFER_SIZE - 1)],
+        random_buffer_1024[(i * 2 + 1) & (RANDOM_BUFFER_SIZE - 1)] & 0xFF,
+        28);
+}
+
+static void test_memset_unaligned_random_64(int i) {
+    memset_func(buffer_page + random_buffer_1024[(i * 2) & (RANDOM_BUFFER_SIZE - 1)],
+        random_buffer_1024[(i * 2 + 1) & (RANDOM_BUFFER_SIZE - 1)] & 0xFF,
+        64);
+}
+
+static void test_memset_unaligned_random_137(int i) {
+    memset_func(buffer_page + random_buffer_1024[(i * 2) & (RANDOM_BUFFER_SIZE - 1)],
+        random_buffer_1024[(i * 2 + 1) & (RANDOM_BUFFER_SIZE - 1)] & 0xFF,
+        137);
+}
+
 static void clear_data_cache() {
     int val = 0;
     for (int i = 0; i < 1024 * 1024 * 32; i += 4) {
@@ -691,7 +794,7 @@ static test_t test[NU_TESTS] = {
     { "8M bytes page aligned", test_page_aligned_8M, 8 * 1024 * 1024 },
 };
 
-#define NU_MEMSET_TESTS 5
+#define NU_MEMSET_TESTS 22
 
 static test_t memset_test[NU_MEMSET_TESTS] = {
     { "Mixed powers of 2 from 4 to 4096 (power law), word aligned", test_memset_mixed_powers_of_two_word_aligned, 2048 },
@@ -699,6 +802,23 @@ static test_t memset_test[NU_MEMSET_TESTS] = {
     { "Mixed from 1 to 1023 (power law), unaligned", test_memset_mixed_power_law_unaligned, 512 },
     { "1024 bytes page aligned", test_memset_page_aligned_1024, 1024 },
     { "4096 bytes page aligned", test_memset_page_aligned_4096, 4096 },
+    { "4 bytes word aligned", test_memset_aligned_4, 4 },
+    { "8 bytes word aligned", test_memset_aligned_8, 8 },
+    { "16 bytes word aligned", test_memset_aligned_16, 16 },
+    { "28 bytes word aligned", test_memset_aligned_28, 28 },
+    { "32 bytes word aligned", test_memset_aligned_32, 32 },
+    { "64 bytes word aligned", test_memset_aligned_64, 64 },
+    { "64 bytes various alignments word aligned (multi-test)", test_memset_various_aligned_64, 64 },
+    { "80 bytes word aligned", test_memset_aligned_80, 80 },
+    { "92 bytes word aligned", test_memset_aligned_92, 92 },
+    { "128 bytes word aligned", test_memset_aligned_128, 128 },
+    { "256 bytes word aligned", test_memset_aligned_256, 256 },
+    { "3 bytes randomly aligned", test_memset_unaligned_random_3, 3 },
+    { "8 bytes randomly aligned", test_memset_unaligned_random_8, 8 },
+    { "17 bytes randomly aligned", test_memset_unaligned_random_17, 17 },
+    { "28 bytes randomly aligned", test_memset_unaligned_random_28, 28 },
+    { "64 bytes randomly aligned", test_memset_unaligned_random_64, 64 },
+    { "137 bytes randomly aligned", test_memset_unaligned_random_137, 137 },
 };
 
 static void usage() {
@@ -743,10 +863,12 @@ int main(int argc, char *argv[]) {
     int command_all = 0;
     int repeat = 5;
     int validate = 0;
+    int memcpy_specified = 0;
+    int memset_specified = 0;
     for (int i = 0; i < NU_MEMCPY_VARIANTS; i++)
-        memcpy_mask[i] = 1;
+        memcpy_mask[i] = 0;
     for (int i = 0; i < NU_MEMSET_VARIANTS; i++)
-        memset_mask[i] = 1;
+        memset_mask[i] = 0;
     for (;;) {
         if (argi >= argc)
             break;
@@ -772,9 +894,12 @@ int main(int argc, char *argv[]) {
             continue;
         }
         if (strcasecmp(argv[argi], "--list") == 0) {
-            printf("Tests:\n");
+            printf("Tests (memcpy):\n");
             for (int i = 0; i < NU_TESTS; i++)
                 printf("%3d    %s\n", i, test[i].name);
+            printf("Tests (memset):\n");
+            for (int i = 0; i < NU_MEMSET_TESTS; i++)
+                printf("%3d    %s\n", i, memset_test[i].name);
             printf("memcpy variants:\n");
             for (int i = 0; i < NU_MEMCPY_VARIANTS; i++)
                 printf("  %c    %s\n", memcpy_variant_to_char(i), memcpy_variant_name[i]);
@@ -803,6 +928,7 @@ int main(int argc, char *argv[]) {
             for (int i = 0; i < strlen(argv[argi + 1]); i++)
                 if (char_to_memcpy_variant(argv[argi + 1][i]) >= 0 && char_to_memcpy_variant(argv[argi + 1][i]) < NU_MEMCPY_VARIANTS)
                     memcpy_mask[char_to_memcpy_variant(argv[argi + 1][i])] = 1;
+            memcpy_specified = 1;
             argi += 2;
             continue;
         }
@@ -826,10 +952,22 @@ int main(int argc, char *argv[]) {
             for (int i = 0; i < strlen(argv[argi + 1]); i++)
                 if (char_to_memcpy_variant(argv[argi + 1][i]) >= 0 && char_to_memcpy_variant(argv[argi + 1][i]) < NU_MEMSET_VARIANTS)
                     memset_mask[char_to_memcpy_variant(argv[argi + 1][i])] = 1;
+            memset_specified = 1;
             argi += 2;
             continue;
         }
         printf("Unkown option. Try --help.\n");
+        return 1;
+    }
+
+    if (memcpy_specified && memset_specified) {
+        printf("Specify only one of --memcpy and --memset.\n");
+        return 1;
+    }
+
+    if (command_test != -1 && memset_specified &&
+    command_test >= NU_MEMSET_TESTS) {
+        printf("Test out of range for memset.\n");
         return 1;
     }
 
@@ -898,7 +1036,10 @@ int main(int argc, char *argv[]) {
 
     int start_test, end_test;
     start_test = 0;
-    end_test = NU_TESTS - 1;
+    if (memset_specified)
+        end_test = NU_MEMSET_TESTS - 1;
+    else
+        end_test = NU_TESTS - 1;
     if (command_test != - 1) {
         start_test = command_test;
         end_test = command_test;
@@ -918,6 +1059,8 @@ int main(int argc, char *argv[]) {
             }
         return 0;
     }
+    if (!memcpy_specified)
+        goto skip_memcpy_test;
     for (int t = start_test; t <= end_test; t++) {
         for (int j = 0; j < NU_MEMCPY_VARIANTS; j++)
             if (memcpy_mask[j]) {
@@ -927,7 +1070,25 @@ int main(int argc, char *argv[]) {
                     do_test(test[t].name, test[t].test_func, test[t].bytes);
             }
     }
-    for (int t = 0; t < NU_MEMSET_TESTS; t++) {
+skip_memcpy_test:
+    if (!memset_specified)
+        goto skip_memset_test;
+    for (int t = start_test; t <= end_test; t++) {
+        if (t == 11) {
+            for (test_alignment = 0; test_alignment < 32; test_alignment += 4) {
+                char test_name[128];
+                sprintf(test_name, "%s (alignment %d)", memset_test[t].name,
+                    test_alignment);
+                for (int j = 0; j < NU_MEMSET_VARIANTS; j++)
+                    if (memset_mask[j]) {
+                        printf("%s:\n", memset_variant_name[j]);
+                        memset_func = memset_variant[j];
+                        for (int i = 0; i < repeat; i++)
+                            do_test(test_name, memset_test[t].test_func, memset_test[t].bytes);
+                    }
+            }
+            continue;
+        }
         for (int j = 0; j < NU_MEMSET_VARIANTS; j++)
             if (memset_mask[j]) {
                 printf("%s:\n", memset_variant_name[j]);
@@ -936,4 +1097,6 @@ int main(int argc, char *argv[]) {
                     do_test(memset_test[t].name, memset_test[t].test_func, memset_test[t].bytes);
             }
     }
+skip_memset_test:
+    exit(0);
 }

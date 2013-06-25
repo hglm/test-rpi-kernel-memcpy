@@ -12,7 +12,7 @@
 #include "kernel_defines.h"
 
 	.text
-	.align	5
+	.p2align 5
 
 1:	subs	r2, r2, #4		@ 1 do we have enough
 	blt	5f			@ 1 bytes to align with?
@@ -83,27 +83,39 @@ ENTRY(kernel_memset)
 	mov	ip, r1
 	mov	lr, r1
 	blt	7f
-	tst	r0, #31
+.if MEMSET_WRITE_ALIGN_BYTES == 8
+	tst	r0, #4
 	beq	3f
 
-	and	ip, r0, #31
-	rsb	ip, ip, #32
-	sub	r2, r2, ip
-	movs	ip, ip, lsl #(32 - 4)
-	stmcsia	r0!, {r1, r3}
-	stmcsia r0!, {r1, r3}
-	stmmiia	r0!, {r1, r3}
-	tst	ip, #(1 << 30)
-	mov	ip, r3
+	cmp	r2, #68
+	str	r1, [r0], #4
+        sub	r2, r2, #4
+	blt     7f
+.else	/* MEMSET_WRITE_ALIGN_BYTES == 32 */
+	tst	r0, #31
+	beq	3f
+	tst     r0, #4
 	strne	r1, [r0], #4
+        subne	r2, r2, #4
+	tst     r0, #8
+	stmneia r0!, {r1, r3}
+        subne   r2, r2, #8
+	tst	r0, #16
+	stmneia r0!, {r1, r3}
+        subne   r2, r2, #16
+        stmneia r0!, {r1, r3}
+	cmp	r2, #64
+	blt	7f
+.endif
 
-3:	
-	subs	r2, r2, #64
-	stmgeia	r0!, {r1, r3, ip, lr}
-	stmgeia	r0!, {r1, r3, ip, lr}
-	stmgeia	r0!, {r1, r3, ip, lr}
-	stmgeia	r0!, {r1, r3, ip, lr}
-	bgt	3b
+3:	stmia	r0!, {r1, r3, ip, lr}
+	sub	r2, r2, #64
+	stmia	r0!, {r1, r3, ip, lr}
+	cmp     r2, #64
+	stmia	r0!, {r1, r3, ip, lr}
+	stmia	r0!, {r1, r3, ip, lr}
+	bge	3b
+	tst     r2, #63
 	ldmeqfd	sp!, {r0, pc}
 
 7:	tst	r2, #32

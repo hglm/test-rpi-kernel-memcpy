@@ -1,7 +1,7 @@
 # Add -DARMV7 to test armv7 (L1_CACHE_BYTES = 64), otherwise
 # armv6 is selected (L1_CACHE_BYTES = 32).
 
-CFLAGS = -std=gnu99 -Ofast -Wall -DARMV7
+CFLAGS = -std=gnu99 -Ofast -Wall -DARMV6
 
 all : benchmark
 

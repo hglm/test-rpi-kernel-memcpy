@@ -87,25 +87,40 @@ ENTRY(__kernel_memzero)
 	mov	ip, r2
 	mov     lr, r2
 	blt	7f
-	ands	ip, r0, #31
+
+.if MEMSET_WRITE_ALIGN_BYTES == 8
+	tst	r0, #4
 	beq	3f
 
-	rsb	ip, ip, #32
-	sub	r1, r1, ip
-	movs	ip, ip, lsl #(32 - 4)
-	stmcsia	r0!, {r2, r3}
-	stmcsia	r0!, {r2, r3}
-	stmmiia	r0!, {r2, r3}
-	movs	ip, ip, lsl #2
-	mov	ip, r2
-	strcs	r2, [r0], #4
+	cmp	r1, #68
+	str	r2, [r0], #4
+        sub	r1, r1, #4
+	blt     7f
+.else	/* MEMSET_WRITE_ALIGN_BYTES == 32 */
+	tst	r0, #31
+	beq	3f
+	tst     r0, #4
+	strne	r2, [r0], #4
+        subne	r1, r1, #4
+	tst     r0, #8
+	stmneia r0!, {r2, r3}
+        subne   r1, r1, #8
+	tst	r0, #16
+	stmneia r0!, {r2, r3}
+        subne   r1, r1, #16
+        stmneia r0!, {r2, r3}
+	cmp	r1, #64
+	blt	7f
+.endif
 
-3:	subs	r1, r1, #64
-	stmgeia	r0!, {r2, r3, ip, lr}
-	stmgeia	r0!, {r2, r3, ip, lr}
-	stmgeia	r0!, {r2, r3, ip, lr}
-	stmgeia	r0!, {r2, r3, ip, lr}
-	bgt	3b
+3:	stmia	r0!, {r2, r3, ip, lr}
+	sub	r1, r1, #64
+	stmia	r0!, {r2, r3, ip, lr}
+	cmp	r1, #64
+	stmia	r0!, {r2, r3, ip, lr}
+	stmia	r0!, {r2, r3, ip, lr}
+	bge	3b
+	tst	r1, #63
 	ldmeqfd	sp!, {pc}
 
 7:	tst	r1, #32
