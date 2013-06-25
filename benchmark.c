@@ -670,8 +670,16 @@ static void do_validation(int repeat) {
         else {
             size = floor(pow(2.0, (double)rand() * 20.0 / RAND_MAX));
             source = rand() % (1024 * 1024 * 16 + 1 - size);
+            int aligned = 0;
+            if ((rand() & 3) == 0) {
+		aligned = 1;
+                source &= ~3;
+                size = (size + 3) & (~3);
+            }
             do {
                 dest = rand() % (1024 * 1024 * 16 + 1 - size);
+                if (aligned)
+                    dest &= ~3;
             }
             while (dest + size > source && dest < source + size);
         }

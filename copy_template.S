@@ -119,9 +119,10 @@
 #ifdef OPTIMIZED_FUNCTION_ENTRY
 		/*
                  * For small aligned memcpy/copy_to_user/copy_from_user
-                 * operations, the current implementation has a lot of
+                 * operations, the current implementation has som
                  * overhead. By creating a fast path for common small
-                 * aligned requests, performance is increased.
+                 * aligned requests, performance is increased. This
+		 * applies to both memcpy and copy_to/from_user.
                  */
 		cmp	r2, #64
 		enter	r4, lr
@@ -137,6 +138,18 @@
 		 * At this point, we have small (<= 64 bytes) word-aligned
 		 * request of multiple-of-4 size of 8 bytes or greater.
 		 */
+#ifdef COPY_FUNCTION_MEMCPY
+35:		subs	r2, r2, #16
+		ldmgeia	r1!, {r3, r4, ip, lr}
+		stmgeia r0!, {r3, r4, ip, lr}
+		bgt	35b
+		tst	r2, #8
+		ldmneia r1!, {r3, r4}
+		stmneia r0!, {r3, r4}
+		tst	r2, #4
+		ldrne	r3, [r1]
+		strne	r3, [r0]
+#else
 32:		ldr1w	r1, r3, abort=21f
 		cmp	r2, #16
 		ldr1w	r1, r4, abort=21f
@@ -145,20 +158,15 @@
 		str1w	r0, r4, abort=21f
 		bge	32b
 		tst	r2, #4
-#ifdef REGULAR_MEMCPY
-		ldrne	r3, [r1]
-		strne	r3, [r0]
-#else
 		beq	34f
 		ldr1w	r1, r3, abort=21f
 		str1w	r0, r3, abort=21f
 34:
 #endif
 		exit	r4, pc
-#endif
-
+#else
 		enter	r4, lr
-
+#endif
 33:		subs	r2, r2, #4
 		bic     r3, r1, #(L1_CACHE_BYTES - 1)
 		blt	8f
@@ -177,7 +185,7 @@
 	CALGN(	rsb	r3, ip, #WRITE_ALIGN_BYTES		)
 	CALGN(	sbcnes	r4, r3, r2		)  @ C is always set here
 	CALGN(	bcs	2f			)
-#ifdef REGULAR_MEMCPY
+#ifdef COPY_FUNCTION_MEMCPY
 	CALGN(	tst     r3, #4			)
 	CALGN(	ldrne   r4, [r1], #4		)
 	CALGN(	strne   r4, [r0], #4		)
@@ -246,7 +254,7 @@
 .endif
 
 5:
-#ifdef REGULAR_MEMCPY
+#ifdef COPY_FUNCTION_MEMCPY
 		tst     r2, #16
 		ldmneia r1!, {r4-r7}
 		stmneia r0!, {r4-r7}
@@ -298,7 +306,7 @@
 #ifndef DISABLE_WRITE_ALIGNMENT
 	CALGN(	bcs	2b	)
 #endif
-#endif	/* defined(REGULAR_MEMCPY) */
+#endif	/* defined(COPY_FUNCTION_MEMCPY) */
 
 7:		ldmfd	sp!, {r5 - r9}
 

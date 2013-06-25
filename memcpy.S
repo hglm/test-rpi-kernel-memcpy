@@ -14,7 +14,7 @@
 
 #define LDR1W_SHIFT	0
 #define STR1W_SHIFT	0
-#define REGULAR_MEMCPY
+#define COPY_FUNCTION_MEMCPY
 
 	.macro ldr1w ptr reg abort
 	W(ldr) \reg, [\ptr], #4
