@@ -86,17 +86,80 @@
  *      instead of nothing. When enabled, WRITE_ALIGN_BYTES defines the number
  *      of bytes to align to (it must be 16 or 32).
  *
- * REGULAR_MEMCPY
+ * COPY_FUNCTION_MEMCPY
  *
- *      When REGULAR_MEMCPY is defined, there no need to use single word
+ *      When COPY_FUNCTION_MEMCPY is defined, there no need to use single word
  *      loads and stores in the alignment and tail parts for the word aligned
  *      case. This results in a measurable speed-up for modern ARM platforms.
+ *      Additionally, write alignment is disabled when COPY_FUNCTION_MEMCPY
+ *      is not defined.
+ *
+ * COPY_FUNCTION_FROM_USER
+ *
+ *      This is defined when compiling the copy_from_user function. The write
+ *      alignment code is disabled because it is slower (the main loop will
+ *      load single words any way, and the write alignment code only
+ *      constitutes overhead).
+ *
+ * COPY_FUNCTION_TO_USER
+ *
+ *      This is defined when compiling the copy_to_user and copy_to_user_std
+ *      functions. The write alignment code is disabled because it is slower
+ *      (the main loop will write single words any way, and the write alignment
+ *      code only constitutes overhead).
  *
  */
 
+#ifndef COPY_FUNCTION_MEMCPY
+#define DISABLE_WRITE_ALIGNMENT
+#endif
+
+#define OPTIMIZED_FUNCTION_ENTRY
+
+#ifdef OPTIMIZED_FUNCTION_ENTRY
+		/*
+                 * For small aligned memcpy/copy_to_user/copy_from_user
+                 * operations, the current implementation has a lot of
+                 * overhead. By creating a fast path for common small
+                 * aligned requests, performance is increased.
+                 */
+		cmp	r2, #64
+		enter	r4, lr
+		bgt	33f
+
+		cmp	r2, #8
+		tstge	r0, #3
+		tsteq	r1, #3
+		tsteq   r2, #3
+		bne	33f
+
+		/*
+		 * At this point, we have small (<= 64 bytes) word-aligned
+		 * request of multiple-of-4 size of 8 bytes or greater.
+		 */
+32:		ldr1w	r1, r3, abort=21f
+		cmp	r2, #16
+		ldr1w	r1, r4, abort=21f
+		str1w	r0, r3, abort=21f
+		sub	r2, r2, #8
+		str1w	r0, r4, abort=21f
+		bge	32b
+		tst	r2, #4
+#ifdef REGULAR_MEMCPY
+		ldrne	r3, [r1]
+		strne	r3, [r0]
+#else
+		beq	34f
+		ldr1w	r1, r3, abort=21f
+		str1w	r0, r3, abort=21f
+34:
+#endif
+		exit	r4, pc
+#endif
+
 		enter	r4, lr
 
-		subs	r2, r2, #4
+33:		subs	r2, r2, #4
 		bic     r3, r1, #(L1_CACHE_BYTES - 1)
 		blt	8f
 		ands	ip, r0, #3
@@ -109,6 +172,7 @@
 		stmfd	sp!, {r5 - r9}
 		blt	5f
 
+#ifndef DISABLE_WRITE_ALIGNMENT
 	CALGN(	ands	ip, r0, #(WRITE_ALIGN_BYTES - 1)	)
 	CALGN(	rsb	r3, ip, #WRITE_ALIGN_BYTES		)
 	CALGN(	sbcnes	r4, r3, r2		)  @ C is always set here
@@ -133,6 +197,7 @@
 .endif
 	CALGN(	subs	r2, r2, r3		)  @ C gets set
 	CALGN(	add	pc, r4, ip		)
+#endif
 #endif
 
 2:
@@ -230,7 +295,9 @@
 		str1w	r0, r8, abort=20f
 		str1w	r0, lr, abort=20f
 
-	CALGN(	bcs	2b			)
+#ifndef DISABLE_WRITE_ALIGNMENT
+	CALGN(	bcs	2b	)
+#endif
 #endif	/* defined(REGULAR_MEMCPY) */
 
 7:		ldmfd	sp!, {r5 - r9}
@@ -270,11 +337,13 @@
 		subs	r2, r2, #28
 		blt	14f
 
+#ifndef DISABLE_WRITE_ALIGNMENT
 	CALGN(	ands	ip, r0, #(WRITE_ALIGN_BYTES - 1)	)
 	CALGN(	rsb	ip, ip, #WRITE_ALIGN_BYTES		)
 	CALGN(	sbcnes	r4, ip, r2		)  @ C is always set here
 	CALGN(	subcc	r2, r2, ip		)
 	CALGN(	bcc	15f			)
+#endif
 
 11:		stmfd	sp!, {r5 - r10}
 
@@ -327,8 +396,10 @@
 		orr	r3, r3, lr, push #\push
 		str1w	r0, r3, abort=21f
 		bgt	15b
+#ifndef DISABLE_WRITE_ALIGNMENT
 	CALGN(	cmp	r2, #0			)
 	CALGN(	bge	11b			)
+#endif
 
 16:		sub	r1, r1, #(\push / 8)
 		b	8b
