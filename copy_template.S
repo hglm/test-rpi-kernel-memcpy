@@ -119,65 +119,197 @@
 #ifdef OPTIMIZED_FUNCTION_ENTRY
 		/*
                  * For small aligned memcpy/copy_to_user/copy_from_user
-                 * operations, the current implementation has som
+                 * operations, the current implementation has some
                  * overhead. By creating a fast path for common small
                  * aligned requests, performance is increased. This
 		 * applies to both memcpy and copy_to/from_user.
                  */
-		cmp	r2, #64
-		enter	r4, lr
-		bgt	33f
-
 		cmp	r2, #8
-		tstge	r0, #3
-		tsteq	r1, #3
-		tsteq   r2, #3
-		bne	33f
+		/* Calculate the aligned base for preloads. */
+		bic	ip, r1, #(L1_CACHE_BYTES - 1)
+		enter_no_regs
+		pld	[ip]
+		orr	r3, r0, r1
+		blt	36f
+		cmp	r2, #256
+		tstle	r3, #3
+		bne	37f
 
 		/*
-		 * At this point, we have small (<= 64 bytes) word-aligned
-		 * request of multiple-of-4 size of 8 bytes or greater.
+		 * At this point, we have a small (<= 128 bytes) word-aligned
+		 * request of size of 8 bytes or greater.
 		 */
+.macro check_preload bytes_to_go
+.if \bytes_to_go >= (PREFETCH_DISTANCE * L1_CACHE_BYTES)
+	PLD(	pld     [r1, r5]	)
+	NO_PLD(	nop )
+.else
+		nop
+.endif
+.endm
 #ifdef COPY_FUNCTION_MEMCPY
-35:		subs	r2, r2, #16
-		ldmgeia	r1!, {r3, r4, ip, lr}
-		stmgeia r0!, {r3, r4, ip, lr}
-		bgt	35b
+	PLD(	pld	[ip, #L1_CACHE_BYTES] )
+		stmdb	sp!, {r4, r5, lr}
+		bic	r3, r2, #15
+		/*
+                 * Use a heuristic to determine whether the preload
+		 * at aligned_base + 2 * L1_CACHE_BYTES will be useful.
+		 */
+		cmp	r2, #(2 * L1_CACHE_BYTES - L1_CACHE_BYTES / 2)
+	PLD(	add	r5, ip, #(3 * L1_CACHE_BYTES) )
+		sub	r2, r2, r3
+	PLD(	blt	40f	)
+	PLD(	pld	[ip, #(2 * L1_CACHE_BYTES)] )
+40:		rsb	r3, r3, #256
+	PLD(	sub	r5, r5, r1		)
+		add	pc, pc, r3
+		nop
+		/* 256 bytes to go. */
+		check_preload 256
+		ldmia	r1!, {r3, r4, ip, lr}
+		nop
+		stmia	r0!, {r3, r4, ip, lr}
+		/* 240 bytes go. */
+		nop
+		ldmia	r1!, {r3, r4, ip, lr}
+		nop
+		stmia	r0!, {r3, r4, ip, lr}
+		/* 224 bytes to go. */
+		check_preload 224
+		ldmia	r1!, {r3, r4, ip, lr}
+		nop
+		stmia	r0!, {r3, r4, ip, lr}
+		/* 204 bytes go. */
+		nop
+		ldmia	r1!, {r3, r4, ip, lr}
+		nop
+		stmia	r0!, {r3, r4, ip, lr}
+		/* 192 bytes to go. */
+		check_preload 192
+		ldmia	r1!, {r3, r4, ip, lr}
+		nop
+		stmia	r0!, {r3, r4, ip, lr}
+		/* 176 bytes go. */
+		nop
+		ldmia	r1!, {r3, r4, ip, lr}
+		nop
+		stmia	r0!, {r3, r4, ip, lr}
+		/* 160 bytes to go. */
+		check_preload 160
+		ldmia	r1!, {r3, r4, ip, lr}
+		nop
+		stmia	r0!, {r3, r4, ip, lr}
+		/* 144 bytes go. */
+		nop
+		ldmia	r1!, {r3, r4, ip, lr}
+		nop
+		stmia	r0!, {r3, r4, ip, lr}
+		/* 128 bytes to go. */
+		check_preload 128
+		ldmia	r1!, {r3, r4, ip, lr}
+		nop
+		stmia	r0!, {r3, r4, ip, lr}
+		/* 112 bytes go. */
+		nop
+		ldmia	r1!, {r3, r4, ip, lr}
+		nop
+		stmia	r0!, {r3, r4, ip, lr}
+		/* 96 bytes to go. */
+		check_preload 96
+		ldmia	r1!, {r3, r4, ip, lr}
+		nop
+		stmia	r0!, {r3, r4, ip, lr}
+		/* 90 bytes to go. */
+		nop
+		ldmia	r1!, {r3, r4, ip, lr}
+		nop
+		stmia	r0!, {r3, r4, ip, lr}
+		/* 64 bytes to go. */
+		check_preload 64
+		ldmia	r1!, {r3, r4, ip, lr}
+		nop
+		stmia	r0!, {r3, r4, ip, lr}
+		nop
+		ldmia	r1!, {r3, r4, ip, lr}
+		nop
+		stmia	r0!, {r3, r4, ip, lr}
+		nop
+		ldmia	r1!, {r3, r4, ip, lr}
+		nop
+		stmia	r0!, {r3, r4, ip, lr}
+		nop
+		ldmia	r1!, {r3, r4, ip, lr}
+		nop
+		stmia	r0!, {r3, r4, ip, lr}
 		tst	r2, #8
-		ldmneia r1!, {r3, r4}
-		stmneia r0!, {r3, r4}
+		ldrne	ip, [r1], #4
+		ldrne	r3, [r1], #4
+		strne	ip, [r0], #4
+		strne	r3, [r0], #4
 		tst	r2, #4
-		ldrne	r3, [r1]
-		strne	r3, [r0]
+		ldmfd	sp!, {r4, r5, lr}
+		ldrne	ip, [r1], #4
+		strne	ip, [r0], #4
+		tst	r2, #3
+		ldmeqfd	sp!, {r0}
+		moveq	pc, lr
+		b	38f
 #else
-32:		ldr1w	r1, r3, abort=21f
+32:		ldr1w	r1, r3, abort=22f
 		cmp	r2, #16
-		ldr1w	r1, r4, abort=21f
-		str1w	r0, r3, abort=21f
+		ldr1w	r1, ip, abort=22f
+		str1w	r0, r3, abort=22f
 		sub	r2, r2, #8
-		str1w	r0, r4, abort=21f
+		str1w	r0, ip, abort=22f
 		bge	32b
 		tst	r2, #4
 		beq	34f
-		ldr1w	r1, r3, abort=21f
-		str1w	r0, r3, abort=21f
-34:
+		ldr1w	r1, r3, abort=22f
+		str1w	r0, r3, abort=22f
 #endif
-		exit	r4, pc
-#else
-		enter	r4, lr
+34:		tst	r2, #3
+		bne	38f
+		exit_no_regs
+
+36:		/*
+                 * At this point, we have < 8 bytes that may not be aligned.
+		 * This code is optimized for < 4 bytes or word aligned
+		 * source and destination; otherwise, branch to the general
+		 * case.
+                 */
+		subs	r2, r2, #4
+		blt	38f
+		tst	r3, #3
+		bne	35f
+		ldr1w	r1, r3, abort=22f
+		teq	r2, #0
+		str1w	r0, r3, abort=22f
+		beq	39f
+38:		movs	r2, r2, lsl #31
+		ldr1b	r1, r3, ne, abort=22f
+		ldr1b	r1, ip, cs, abort=22f
+		str1b	r0, r3, ne, abort=22f
+		ldr1b	r1, r3, cs, abort=22f
+		str1b	r0, ip, cs, abort=22f
+		str1b	r0, r3, cs, abort=22f
+39:		exit_no_regs
 #endif
+
+35:		add	r2, r2, #4
+37:		stmdb	sp!, {r4, lr}
+
 33:		subs	r2, r2, #4
-		bic     r3, r1, #(L1_CACHE_BYTES - 1)
+		mov	r3, ip
 		blt	8f
 		ands	ip, r0, #3
-	PLD(	pld	[r3]			)
+	PLD(	pld	[r3, #L1_CACHE_BYTES]	)
 		bne	9f
 		ands	ip, r1, #3
 		bne	10f
 
 1:		subs	r2, r2, #(28)
 		stmfd	sp!, {r5 - r9}
+		mov	r8, r3
 		blt	5f
 
 #ifndef DISABLE_WRITE_ALIGNMENT
@@ -213,18 +345,31 @@
 		subs    r2, r2, #32
 		blt     30f
 .endif
+		/*
+                 * Assume a preload at aligned base + 2 * L1_CACHE_BYTES will
+		 * be useful.
+		 */
+	PLD(	pld	[r8, #(2 * L1_CACHE_BYTES)]	)
+
 	PLD(	add     r9, r1, #(PREFETCH_DISTANCE * L1_CACHE_BYTES)	)
 	PLD(	bic     r3, r9, #(L1_CACHE_BYTES - 1)			)
 	PLD(	subs	r2, r2, #(PREFETCH_DISTANCE * L1_CACHE_BYTES)	)
-	PLD(	sub	r9, r3, r1		)
-	PLD(	blt	4f			)
-.if PREFETCH_DISTANCE >= 4
-	PLD(	pld	[r3, #(- 3 * L1_CACHE_BYTES)]	)
-.endif
-.if PREFETCH_DISTANCE >= 3
-	PLD(	pld	[r3, #(- 2 * L1_CACHE_BYTES)]	)
-.endif
-	PLD(	pld	[r3, #(- L1_CACHE_BYTES)]	)
+	PLD(	sub	r9, r3, r1			)
+	PLD(	add	r8, #(3 * L1_CACHE_BYTES)	)
+	PLD(	blt	4f				)
+
+		/*
+        	 * "Catch-up" the early preloads (which have been performed up
+		 * to aligned base + 2 * L1_CACHE_BYTES) to the preload offset
+		 * used in the main loop.
+	         */
+	PLD(	cmp	r8, r3				)
+	PLD(	bge	41f				)
+42:	PLD(	add	r8, r8, #L1_CACHE_BYTES		)
+	PLD(	cmp	r8, r3				)
+	PLD(	pld	[r8, #(- L1_CACHE_BYTES)]	)
+	PLD(	blt	42b				)
+41:
 
 .if L1_CACHE_BYTES == 32
 3:	PLD(	pld	[r1, r9]		)
@@ -318,7 +463,8 @@
 		str1b	r0, r4, cs, abort=21f
 		str1b	r0, ip, cs, abort=21f
 
-		exit	r4, pc
+		ldmfd	sp!, {r4, lr}
+		exit_no_regs
 
 9:		rsb	ip, ip, #4
 		cmp	ip, #2
@@ -352,7 +498,13 @@
 	CALGN(	subcc	r2, r2, ip		)
 	CALGN(	bcc	15f			)
 #endif
-
+		/*
+		 * We need the aligned base used for early preloads,
+		 * but because this is an entry point from multiple
+		 * code paths, we don't have the value available in
+		 * all cases and so cannot match up the early preloads
+		 * with the preloads in the main loop.
+		 */
 11:		stmfd	sp!, {r5 - r10}
 
         PLD(    add     r10, r1, #(PREFETCH_DISTANCE * L1_CACHE_BYTES)	)
@@ -430,13 +582,13 @@
  */
 
 	.macro	copy_abort_preamble
-19:	ldmfd	sp!, {r5 - r9}
+19:	ldmfd	sp!, {r5 - r10}
 	b	21f
 20:	ldmfd	sp!, {r5 - r9}
-21:
+21:	ldmfd	sp!, {r4, lr}
+22:
 	.endm
 
 	.macro	copy_abort_end
-	ldmfd	sp!, {r4, pc}
+	exit_no_regs
 	.endm
-

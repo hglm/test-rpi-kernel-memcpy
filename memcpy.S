@@ -56,6 +56,15 @@
 	ldmfd sp!, {r0, \reg1, \reg2}
 	.endm
 
+        .macro enter_no_regs
+        stmdb sp!, {r0}
+        .endm
+
+        .macro exit_no_regs
+        ldmfd sp!, {r0}
+        mov pc, lr
+        .endm
+
 	.text
 	.p2align 5
 
