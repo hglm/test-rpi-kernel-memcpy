@@ -110,7 +110,27 @@
  *
  */
 
-#ifndef COPY_FUNCTION_MEMCPY
+#ifdef COPY_FUNCTION_MEMCPY
+/*
+ * For regular memcpy, we have a fast path handling up to 256 bytes.
+ * Because the fast path doesn't do write aligning, on platforms that
+ * appreciate write aligning setting the threshold to a lower value
+ * than 256 bytes might have a benefit.
+ */
+#define FAST_PATH_SIZE_THRESHOLD 256
+#else
+/*
+ * When copy_to_user_memcpy is enabled in the kernel configuration
+ * (CONFIG_UACCESS_WITH_MEMCPY), the assembler copy_to_user function
+ * will only be called for sizes less than 64 bytes. Ideally, the
+ * fast path threshold for copy_to_user should be 63 or higher to
+ * avoid the non-fast path code being used only for a limited size
+ * range.
+ *
+ * For copy_from_user, it seems a threshold value of 256 is unoptimal
+ * for larger sizes up to 256 bytes, so 96 is a better value.
+ */
+#define FAST_PATH_SIZE_THRESHOLD 96
 #define DISABLE_WRITE_ALIGNMENT
 #endif
 
@@ -131,13 +151,13 @@
 		pld	[ip]
 		orr	r3, r0, r1
 		blt	36f
-		cmp	r2, #256
+		cmp	r2, #FAST_PATH_SIZE_THRESHOLD
 		tstle	r3, #3
 		bne	37f
 
 		/*
-		 * At this point, we have a small (<= 256 bytes) word-aligned
-		 * request of size of 8 bytes or greater.
+		 * At this point, we have a small (<= FAST_PATH_SIZE_THRESHOLD
+		 * bytes) word-aligned request of size of 8 bytes or greater.
 		 */
 .macro check_preload bytes_to_go
 .if \bytes_to_go >= (PREFETCH_DISTANCE * L1_CACHE_BYTES) && (\bytes_to_go % L1_CACHE_BYTES) == 0
@@ -255,6 +275,12 @@
 		moveq	pc, lr
 		b	38f
 #else
+		/*
+                 * For copy_to_user and copy_from_user, the fast path
+		 * uses single word loads and stores, but due to the
+		 * decreased overhead this can be a big win for small
+		 * sizes which are very common.
+		 */
 32:		ldr1w	r1, r3, abort=22f
 		cmp	r2, #16
 		ldr1w	r1, ip, abort=22f
@@ -296,6 +322,10 @@
 #endif
 
 35:		add	r2, r2, #4
+		/*
+		 * This is the entry point of the original function.
+		 * ip holds the aligned source base address.
+		 */
 37:		stmdb	sp!, {r4, lr}
 
 33:		subs	r2, r2, #4
@@ -313,6 +343,7 @@
 		blt	5f
 
 #ifndef DISABLE_WRITE_ALIGNMENT
+		/* For regular memcpy, use conditional multiloads/stores. */
 	CALGN(	ands	ip, r0, #(WRITE_ALIGN_BYTES - 1)	)
 	CALGN(	rsb	r3, ip, #WRITE_ALIGN_BYTES		)
 	CALGN(	sbcnes	r4, r3, r2		)  @ C is always set here
@@ -400,6 +431,10 @@
 
 5:
 #ifdef COPY_FUNCTION_MEMCPY
+		/*
+		 * For regular memcpy, use conditional multiloads/stores
+		 * for the tail.
+		 */
 		tst     r2, #16
 		ldmneia r1!, {r4-r7}
 		stmneia r0!, {r4-r7}
@@ -520,6 +555,13 @@
 .endif
 	PLD(	pld	[r3, #(- L1_CACHE_BYTES)]	)
 
+		/*
+		 * Note that when L1_CACHE_BYTES is 64, we are
+		 * prefetching every 32 bytes. Although not optimal
+		 * there doesn't seem to be big penalty for the extra
+		 * preload instructions and it prevents greater
+		 * code size and complexity.
+		 */
 12:	PLD(	pld	[r1, r10]		)
 13:		ldr4w	r1, r4, r5, r6, r7, abort=19f
 		mov	r3, lr, pull #\pull

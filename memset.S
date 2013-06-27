@@ -21,7 +21,7 @@ ENTRY(kernel_memset)
 /*
  * we know that the pointer in r0 is aligned to a word boundary.
  */
-6:	orr	r1, r1, r1, lsl #8
+1:	orr	r1, r1, r1, lsl #8
 	cmp	r2, #16
 	orr	r1, r1, r1, lsl #16
 	mov	r3, r1
