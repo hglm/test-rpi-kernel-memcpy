@@ -136,11 +136,11 @@
 		bne	37f
 
 		/*
-		 * At this point, we have a small (<= 128 bytes) word-aligned
+		 * At this point, we have a small (<= 256 bytes) word-aligned
 		 * request of size of 8 bytes or greater.
 		 */
 .macro check_preload bytes_to_go
-.if \bytes_to_go >= (PREFETCH_DISTANCE * L1_CACHE_BYTES)
+.if \bytes_to_go >= (PREFETCH_DISTANCE * L1_CACHE_BYTES) && (\bytes_to_go % L1_CACHE_BYTES) == 0
 	PLD(	pld     [r1, r5]	)
 	NO_PLD(	nop )
 .else
@@ -155,7 +155,7 @@
                  * Use a heuristic to determine whether the preload
 		 * at aligned_base + 2 * L1_CACHE_BYTES will be useful.
 		 */
-		cmp	r2, #(2 * L1_CACHE_BYTES - L1_CACHE_BYTES / 2)
+	PLD(	cmp	r2, #(2 * L1_CACHE_BYTES - L1_CACHE_BYTES / 2)	)
 	PLD(	add	r5, ip, #(3 * L1_CACHE_BYTES) )
 		sub	r2, r2, r3
 	PLD(	blt	40f	)
