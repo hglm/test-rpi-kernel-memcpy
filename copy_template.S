@@ -392,12 +392,6 @@
 		str1b	r0, ip, cs, abort=22f
 		str1b	r0, r3, cs, abort=22f
 39:		exit_no_regs
-#if defined(COPY_FUNCTION_MEMCPY) && defined(SMALL_SIZE_UNROLLED)
-		/* Special case of size of 4 word aligned. */
-45:		ldr	r3, [r1]
-		str	r3, [r0]
-		exit_no_regs
-#endif
 #endif
 
 35:		add	r2, r2, #3
