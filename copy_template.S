@@ -111,26 +111,45 @@
  */
 
 #ifdef COPY_FUNCTION_MEMCPY
+/* The small size threshold must be >= 15 for COPY_FUNCTION_MEMCPY. */
+#define SMALL_SIZE_THRESHOLD 15
 /*
- * For regular memcpy, we have a fast path handling up to 256 bytes.
- * Because the fast path doesn't do write aligning, on platforms that
- * appreciate write aligning setting the threshold to a lower value
- * than 256 bytes might have a benefit.
+ * For regular memcpy, doing word-aligned small sizes by jumping into an
+ * unrolled loop might be faster for dual-issue architectures. Currently
+ * disabled.
+ */
+/* #define SMALL_SIZE_THRESHOLD 32 */
+/* #define SMALL_SIZE_UNROLLED */
+/*
+ * For regular memcpy, we have a fast path handling up to 256 bytes for
+ * word aligned requests. Because the fast path doesn't do write aligning,
+ * on platforms that appreciate write aligning setting the threshold to a
+ * lower value than 256 bytes might have a benefit.
  */
 #define FAST_PATH_SIZE_THRESHOLD 256
-#else
+#endif
+#ifdef COPY_FUNCTION_FROM_USER
+#define SMALL_SIZE_THRESHOLD 8
+#define FAST_PATH_SIZE_THRESHOLD 95
+/*
+ * For copy_from_user, the fast path is unoptimal for sizes greater or
+ * equal to about 96 bytes.
+ */
+#define DISABLE_WRITE_ALIGNMENT
+#endif
+#ifdef COPY_FUNCTION_TO_USER
+#define SMALL_SIZE_THRESHOLD 8
 /*
  * When copy_to_user_memcpy is enabled in the kernel configuration
  * (CONFIG_UACCESS_WITH_MEMCPY), the assembler copy_to_user function
  * will only be called for sizes less than 64 bytes. Ideally, the
  * fast path threshold for copy_to_user should be 63 or higher to
- * avoid the non-fast path code being used only for a limited size
- * range.
+ * avoid the non-fast path code completely.
  *
- * For copy_from_user, it seems a threshold value of 256 is unoptimal
- * for larger sizes up to 256 bytes, so 96 is a better value.
+ * Otherwise, it seems the fast path is faster or almost as fast even
+ * for larger sizes.
  */
-#define FAST_PATH_SIZE_THRESHOLD 96
+#define FAST_PATH_SIZE_THRESHOLD 256
 #define DISABLE_WRITE_ALIGNMENT
 #endif
 
@@ -144,23 +163,26 @@
                  * aligned requests, performance is increased. This
 		 * applies to both memcpy and copy_to/from_user.
                  */
-		cmp	r2, #8
+		cmp	r2, #SMALL_SIZE_THRESHOLD
 		/* Calculate the aligned base for preloads. */
 		bic	ip, r1, #(L1_CACHE_BYTES - 1)
 		enter_no_regs
 		pld	[ip]
 		orr	r3, r0, r1
-		blt	36f
+		ble	36f
 		cmp	r2, #FAST_PATH_SIZE_THRESHOLD
 		tstle	r3, #3
 		bne	37f
 
 		/*
 		 * At this point, we have a small (<= FAST_PATH_SIZE_THRESHOLD
-		 * bytes) word-aligned request of size of 8 bytes or greater.
+		 * bytes) word-aligned request of size greater than
+		 * SMALL_SIZE_THRESHOLD, which must be >= 15 so the size
+		 * is >= 16 when we get here.
 		 */
 .macro check_preload bytes_to_go
-.if \bytes_to_go >= (PREFETCH_DISTANCE * L1_CACHE_BYTES) && (\bytes_to_go % L1_CACHE_BYTES) == 0
+.if \bytes_to_go >= (PREFETCH_DISTANCE * L1_CACHE_BYTES) && \
+(\bytes_to_go % L1_CACHE_BYTES) == 0
 	PLD(	pld     [r1, r5]	)
 	NO_PLD(	nop )
 .else
@@ -257,15 +279,25 @@
 		ldmia	r1!, {r3, r4, ip, lr}
 		nop
 		stmia	r0!, {r3, r4, ip, lr}
-		nop
+		/* At this point there are 16 to 31 bytes to go. */
+		tst	r2, #15
 		ldmia	r1!, {r3, r4, ip, lr}
-		nop
+		cmpne	r2, #8
+		/*
+		 * If r2 == 8, we need to clear the eq flag while
+		 * making sure carry remains set.
+		 */
+		tsteq	r2, #15
 		stmia	r0!, {r3, r4, ip, lr}
-		tst	r2, #8
-		ldrne	ip, [r1], #4
-		ldrne	r3, [r1], #4
-		strne	ip, [r0], #4
-		strne	r3, [r0], #4
+		/*
+		 * The equal is set if there are no bytes left.
+		 * The carry flag is set is there are >= 8 bytes left.
+		 */
+		beq	43f
+		ldrcs	ip, [r1], #4
+		ldrcs	r3, [r1], #4
+		strcs	ip, [r0], #4
+		strcs	r3, [r0], #4
 		tst	r2, #4
 		ldmfd	sp!, {r4, r5, lr}
 		ldrne	ip, [r1], #4
@@ -274,6 +306,9 @@
 		ldmeqfd	sp!, {r0}
 		moveq	pc, lr
 		b	38f
+43:		ldmfd	sp!, {r4, r5, lr}
+		ldmfd	sp!, {r0}
+		mov	pc, lr
 #else
 		/*
                  * For copy_to_user and copy_from_user, the fast path
@@ -298,19 +333,57 @@
 		exit_no_regs
 
 36:		/*
-                 * At this point, we have < 8 bytes that may not be aligned.
-		 * This code is optimized for < 4 bytes or word aligned
-		 * source and destination; otherwise, branch to the general
-		 * case.
+                 * At this point, we have <= SMALL_SIZE_THRESHOLD bytes that
+		 * may not be aligned. This code is optimized for < 4 bytes
+		 * or word aligned source and destination; otherwise, branch
+		 * to the general case.
                  */
-		subs	r2, r2, #4
+#if defined(COPY_FUNCTION_MEMCPY) && defined(SMALL_SIZE_UNROLLED)
+		cmp	r2, #4
 		blt	38f
 		tst	r3, #3
+		bic	r3, r2, #7
+		bne	37f
+		rsb	ip, r3, #32
+		sub	r0, r0, ip
+		sub	r1, r1, ip
+		add	pc, pc, ip, lsl #1
+		nop
+		ldr	r3, [r1]
+		ldr	ip, [r1, #4]
+		str	r3, [r0] 
+		str	ip, [r0, #4]
+		ldr	r3, [r1, #8]
+		ldr	ip, [r1, #12]
+		str	r3, [r0, #8]
+		str	ip, [r0, #12]
+		ldr	r3, [r1, #16]
+		ldr	ip, [r1, #20]
+		str	r3, [r0, #16]
+		str	ip, [r0, #20]
+		ldr	r3, [r1, #24]
+		ldr	ip, [r1, #28]
+		str	r3, [r0, #24]
+		str	ip, [r0, #28]
+		add	r0, r0, #32
+		add	r1, r1, #32
+		tst	r2, #4
+		ldrne	r3, [r1], #4
+		strne	r3, [r0], #4
+#else
+		cmp	r2, #4
+		blt	38f
+		tst	r3, #3
+		sub	r2, r2, #3
 		bne	35f
-		ldr1w	r1, r3, abort=22f
-		teq	r2, #0
+		/* Word aligned source and destination, >= 4 bytes. */
+44:		ldr1w	r1, r3, abort=22f
+		subs	r2, r2, #4
 		str1w	r0, r3, abort=22f
+		bgt	44b
+		adds	r2, r2, #3
 		beq	39f
+#endif
 38:		movs	r2, r2, lsl #31
 		ldr1b	r1, r3, ne, abort=22f
 		ldr1b	r1, ip, cs, abort=22f
@@ -319,9 +392,15 @@
 		str1b	r0, ip, cs, abort=22f
 		str1b	r0, r3, cs, abort=22f
 39:		exit_no_regs
+#if defined(COPY_FUNCTION_MEMCPY) && defined(SMALL_SIZE_UNROLLED)
+		/* Special case of size of 4 word aligned. */
+45:		ldr	r3, [r1]
+		str	r3, [r0]
+		exit_no_regs
+#endif
 #endif
 
-35:		add	r2, r2, #4
+35:		add	r2, r2, #3
 		/*
 		 * This is the entry point of the original function.
 		 * ip holds the aligned source base address.

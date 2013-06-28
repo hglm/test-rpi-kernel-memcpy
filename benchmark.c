@@ -123,6 +123,13 @@ static void test_mixed_power_law_word_aligned(int i) {
         random_buffer_multiples_of_four_up_to_1024_power_law[i & (RANDOM_BUFFER_SIZE - 1)]);
 }
 
+static void test_mixed_4_to_130_aligned(int i) {
+    memcpy_func(buffer_page + random_buffer_1M[(i * 2) & (RANDOM_BUFFER_SIZE - 1)] * 4,
+        buffer_page + random_buffer_1M[(i * 2 + 1) & (RANDOM_BUFFER_SIZE - 1)] * 4,
+        4 + (random_buffer_1024[i & (RANDOM_BUFFER_SIZE - 1)] & 124));
+}
+
+
 static void test_mixed_power_law_unaligned(int i) {
     memcpy_func(buffer_page + random_buffer_1M[(i * 2) & (RANDOM_BUFFER_SIZE - 1)],
         buffer_page + random_buffer_1M[(i * 2 + 1) & (RANDOM_BUFFER_SIZE - 1)],
@@ -169,6 +176,12 @@ static void test_aligned_64(int i) {
     memcpy_func(buffer_page + random_buffer_1024[(i * 2) & (RANDOM_BUFFER_SIZE - 1)] * 4,
         buffer_page + 8192 + random_buffer_1024[(i * 2 + 1) & (RANDOM_BUFFER_SIZE - 1)] * 4,
         64);
+}
+
+static void test_aligned_100(int i) {
+    memcpy_func(buffer_page + random_buffer_1024[(i * 2) & (RANDOM_BUFFER_SIZE - 1)] * 4,
+        buffer_page + 8192 + random_buffer_1024[(i * 2 + 1) & (RANDOM_BUFFER_SIZE - 1)] * 4,
+        100);
 }
 
 static void test_aligned_128(int i) {
@@ -734,7 +747,7 @@ static void do_validation_memset(int repeat) {
     }
 }
 
-#define NU_TESTS 48
+#define NU_TESTS 50
 
 typedef struct {
     const char *name;
@@ -800,6 +813,8 @@ static test_t test[NU_TESTS] = {
     { "256K bytes page aligned", test_page_aligned_256K, 256 * 1024 },
     { "1M bytes page aligned", test_page_aligned_1M, 1024 * 1024 },
     { "8M bytes page aligned", test_page_aligned_8M, 8 * 1024 * 1024 },
+    { "Mixed multiples of 4 from 4 to 130, word aligned", test_mixed_4_to_130_aligned, (130 + 4) / 2 },
+    { "100 bytes word aligned", test_aligned_100, 100 },
 };
 
 #define NU_MEMSET_TESTS 22
