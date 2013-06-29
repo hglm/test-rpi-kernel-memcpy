@@ -114,13 +114,6 @@
 /* The small size threshold must be >= 15 for COPY_FUNCTION_MEMCPY. */
 #define SMALL_SIZE_THRESHOLD 15
 /*
- * For regular memcpy, doing word-aligned small sizes by jumping into an
- * unrolled loop might be faster for dual-issue architectures. Currently
- * disabled.
- */
-/* #define SMALL_SIZE_THRESHOLD 32 */
-/* #define SMALL_SIZE_UNROLLED */
-/*
  * For regular memcpy, we have a fast path handling up to 256 bytes for
  * word aligned requests. Because the fast path doesn't do write aligning,
  * on platforms that appreciate write aligning setting the threshold to a
@@ -153,9 +146,9 @@
 #define DISABLE_WRITE_ALIGNMENT
 #endif
 
-#define OPTIMIZED_FUNCTION_ENTRY
+#define OPTIMIZE_WITH_FAST_PATH
 
-#ifdef OPTIMIZED_FUNCTION_ENTRY
+#ifdef OPTIMIZE_WITH_FAST_PATH
 		/*
                  * For small aligned memcpy/copy_to_user/copy_from_user
                  * operations, the current implementation has some
@@ -180,6 +173,7 @@
 		 * SMALL_SIZE_THRESHOLD, which must be >= 15 so the size
 		 * is >= 16 when we get here.
 		 */
+#ifdef COPY_FUNCTION_MEMCPY
 .macro check_preload bytes_to_go
 .if \bytes_to_go >= (PREFETCH_DISTANCE * L1_CACHE_BYTES) && \
 (\bytes_to_go % L1_CACHE_BYTES) == 0
@@ -189,7 +183,6 @@
 		nop
 .endif
 .endm
-#ifdef COPY_FUNCTION_MEMCPY
 	PLD(	pld	[ip, #L1_CACHE_BYTES] )
 		stmdb	sp!, {r4, r5, lr}
 		bic	r3, r2, #15
@@ -338,39 +331,6 @@
 		 * or word aligned source and destination; otherwise, branch
 		 * to the general case.
                  */
-#if defined(COPY_FUNCTION_MEMCPY) && defined(SMALL_SIZE_UNROLLED)
-		cmp	r2, #4
-		blt	38f
-		tst	r3, #3
-		bic	r3, r2, #7
-		bne	37f
-		rsb	ip, r3, #32
-		sub	r0, r0, ip
-		sub	r1, r1, ip
-		add	pc, pc, ip, lsl #1
-		nop
-		ldr	r3, [r1]
-		ldr	ip, [r1, #4]
-		str	r3, [r0] 
-		str	ip, [r0, #4]
-		ldr	r3, [r1, #8]
-		ldr	ip, [r1, #12]
-		str	r3, [r0, #8]
-		str	ip, [r0, #12]
-		ldr	r3, [r1, #16]
-		ldr	ip, [r1, #20]
-		str	r3, [r0, #16]
-		str	ip, [r0, #20]
-		ldr	r3, [r1, #24]
-		ldr	ip, [r1, #28]
-		str	r3, [r0, #24]
-		str	ip, [r0, #28]
-		add	r0, r0, #32
-		add	r1, r1, #32
-		tst	r2, #4
-		ldrne	r3, [r1], #4
-		strne	r3, [r0], #4
-#else
 		cmp	r2, #4
 		blt	38f
 		tst	r3, #3
@@ -383,7 +343,6 @@
 		bgt	44b
 		adds	r2, r2, #3
 		beq	39f
-#endif
 38:		movs	r2, r2, lsl #31
 		ldr1b	r1, r3, ne, abort=22f
 		ldr1b	r1, ip, cs, abort=22f
@@ -392,9 +351,9 @@
 		str1b	r0, ip, cs, abort=22f
 		str1b	r0, r3, cs, abort=22f
 39:		exit_no_regs
-#endif
 
 35:		add	r2, r2, #3
+#endif	/* defined(OPTIMIZE_WITH_FAST_PATH) */
 		/*
 		 * This is the entry point of the original function.
 		 * ip holds the aligned source base address.
@@ -403,7 +362,15 @@
 
 33:		subs	r2, r2, #4
 		mov	r3, ip
+#if !defined(COPY_FUNCTION_MEMCPY) || !defined(OPTIMIZE_WITH_FAST_PATH)
+		/*
+		 * When both COPY_FUNCTION_MEMCPY and
+		 * OPTIMIZE_WITH_FAST_PATH are defined, r2 is guaranteed
+		 * to be greater than or equal to 4, so we can skip the
+		 * conditional branch.
+		 */
 		blt	8f
+#endif
 		ands	ip, r0, #3
 	PLD(	pld	[r3, #L1_CACHE_BYTES]	)
 		bne	9f
@@ -416,12 +383,12 @@
 		blt	5f
 
 #ifndef DISABLE_WRITE_ALIGNMENT
-		/* For regular memcpy, use conditional multiloads/stores. */
 	CALGN(	ands	ip, r0, #(WRITE_ALIGN_BYTES - 1)	)
 	CALGN(	rsb	r3, ip, #WRITE_ALIGN_BYTES		)
 	CALGN(	sbcnes	r4, r3, r2		)  @ C is always set here
 	CALGN(	bcs	2f			)
 #ifdef COPY_FUNCTION_MEMCPY
+		/* For regular memcpy, use conditional multiloads/stores. */
 	CALGN(	tst     r3, #4			)
 	CALGN(	ldrne   r4, [r1], #4		)
 	CALGN(	strne   r4, [r0], #4		)
