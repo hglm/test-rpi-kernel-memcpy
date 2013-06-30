@@ -88,22 +88,16 @@
 	str\cond\()b \reg, [\ptr], #1
 	.endm
 
-	.macro enter reg1 reg2
-	stmdb sp!, {r0, \reg1, \reg2}
+	.macro enter_no_regs
+	/* Push the destination onto the stack. */
+	stmdb sp!, {r0}
 	.endm
 
-	.macro exit reg1 reg2
-	ldmfd sp!, {r0, \reg1, \reg2}
+	.macro exit_no_regs
+	/* Return the original destination in r0. */
+	ldr r0, [sp], #4
+	mov pc, lr
 	.endm
-
-        .macro enter_no_regs
-        stmdb sp!, {r0}
-        .endm
-
-        .macro exit_no_regs
-        ldmfd sp!, {r0}
-        mov pc, lr
-        .endm
 
 	.text
 	.p2align 5

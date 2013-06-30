@@ -41,22 +41,23 @@
  *	"al" condition is assumed by default.
  *
  * str1w ptr reg abort
+ * str4w ptr reg1 reg2 reg3 reg4 abort
  * str8w ptr reg1 reg2 reg3 reg4 reg5 reg6 reg7 reg8 abort
  * str1b ptr reg cond abort
  *
  *	Same as their ldr* counterparts, but data is stored to 'ptr' location
  *	rather than being loaded.
  *
- * enter reg1 reg2
+ * enter_no_regs reg1 reg2
  *
- *	Preserve the provided registers on the stack plus any additional
- *	data as needed by the implementation including this code. Called
- *	upon code entry.
+ *	Preserve data on the stack as needed by the implementation including
+ *      this code. Called upon code entry.
  *
- * exit reg1 reg2
+ * exit_no_regs reg1 reg2
  *
- *	Restore registers with the values previously saved with the
- *	'preserv' macro. Called upon code termination.
+ *	Exit, processing data on the stack saved with the 'enter' macro.
+ *      Called upon code termination. The lr register holds the return
+ *      address.
  *
  * LDR1W_SHIFT
  * STR1W_SHIFT
@@ -117,17 +118,18 @@
  * For regular memcpy, we have a fast path handling up to 256 bytes for
  * word aligned requests. Because the fast path doesn't do write aligning,
  * on platforms that appreciate write aligning setting the threshold to a
- * lower value than 256 bytes might have a benefit.
+ * lower value than 256 bytes might have a benefit. The treshold must be
+ * greater or equal to 32 for regular memcpy.
  */
 #define FAST_PATH_SIZE_THRESHOLD 256
 #endif
 #ifdef COPY_FUNCTION_FROM_USER
 #define SMALL_SIZE_THRESHOLD 8
-#define FAST_PATH_SIZE_THRESHOLD 95
 /*
  * For copy_from_user, the fast path is unoptimal for sizes greater or
  * equal to about 96 bytes.
  */
+#define FAST_PATH_SIZE_THRESHOLD 95
 #define DISABLE_WRITE_ALIGNMENT
 #endif
 #ifdef COPY_FUNCTION_TO_USER
@@ -168,12 +170,14 @@
 		bne	37f
 
 		/*
-		 * At this point, we have a small (<= FAST_PATH_SIZE_THRESHOLD
-		 * bytes) word-aligned request of size greater than
-		 * SMALL_SIZE_THRESHOLD, which must be >= 15 so the size
-		 * is >= 16 when we get here.
+		 * At this point, we have a small-to-medium sized
+		 * (<= FAST_PATH_SIZE_THRESHOLD bytes) word-aligned request
+		 * of size greater than SMALL_SIZE_THRESHOLD.
 		 */
 #ifdef COPY_FUNCTION_MEMCPY
+		/* In the case of regular memcpy, SMALL_SIZE_THRESHOLD >= 15
+		 * which means that the number of bytes >= 16 when we get here.
+		 */
 .macro check_preload bytes_to_go
 .if \bytes_to_go >= (PREFETCH_DISTANCE * L1_CACHE_BYTES) && \
 (\bytes_to_go % L1_CACHE_BYTES) == 0
@@ -352,25 +356,53 @@
 		str1b	r0, r3, cs, abort=22f
 39:		exit_no_regs
 
+33:		/* Unaligned case, >= 4 bytes. */
+		sub	r2, r2, #4
+		ands	ip, r0, #3
+		bne	9f
+		ands	ip, r1, #3
+		b	10f
+
+1:		/*
+		 * Unaligned case that has been aligned to a word
+		 * boundary (src & 3) == (dst & 3).
+		 */
+		subs	r2, r2, #28
+		stmfd	sp!, {r5 - r9}
+		mov	r8, r3
+		blt	5f
+		b	45f
+
 35:		add	r2, r2, #3
-#endif	/* defined(OPTIMIZE_WITH_FAST_PATH) */
+
 		/*
-		 * This is the entry point of the original function.
+		 * We get here when the fast path was not selected,
+		 * which is for unaligned requests >= 4 bytes and aligned
+		 * requests > FAST_PATH_THRESHOLD. r3 is equal to the
+		 * logical OR of the source and destination addresses,
+		 * ip holds the aligned source base address.
+		 */
+37:		tst	r3, #3
+		stmdb	sp!, {r4, lr}
+		mov	r3, ip
+	PLD(	pld	[ip, #L1_CACHE_BYTES]	)
+		bne	33b	/* Unaligned. */
+
+		subs	r2, r2, #32
+		stmfd	sp!, {r5 - r9}
+		mov	r8, r3
+45:
+#else	/* defined(OPTIMIZE_WITH_FAST_PATH) */
+		/*
+		 * This is the entry point of the original function, used
+		 * when the fast path is disabled.
 		 * ip holds the aligned source base address.
 		 */
 37:		stmdb	sp!, {r4, lr}
 
 33:		subs	r2, r2, #4
 		mov	r3, ip
-#if !defined(COPY_FUNCTION_MEMCPY) || !defined(OPTIMIZE_WITH_FAST_PATH)
-		/*
-		 * When both COPY_FUNCTION_MEMCPY and
-		 * OPTIMIZE_WITH_FAST_PATH are defined, r2 is guaranteed
-		 * to be greater than or equal to 4, so we can skip the
-		 * conditional branch.
-		 */
 		blt	8f
-#endif
 		ands	ip, r0, #3
 	PLD(	pld	[r3, #L1_CACHE_BYTES]	)
 		bne	9f
@@ -381,6 +413,7 @@
 		stmfd	sp!, {r5 - r9}
 		mov	r8, r3
 		blt	5f
+#endif
 
 #ifndef DISABLE_WRITE_ALIGNMENT
 	CALGN(	ands	ip, r0, #(WRITE_ALIGN_BYTES - 1)	)
@@ -423,18 +456,17 @@
 	PLD(	pld	[r8, #(2 * L1_CACHE_BYTES)]	)
 
 	PLD(	add     r9, r1, #(PREFETCH_DISTANCE * L1_CACHE_BYTES)	)
-	PLD(	bic     r3, r9, #(L1_CACHE_BYTES - 1)			)
 	PLD(	subs	r2, r2, #(PREFETCH_DISTANCE * L1_CACHE_BYTES)	)
-	PLD(	sub	r9, r3, r1			)
+	PLD(	bic     r3, r9, #(L1_CACHE_BYTES - 1)			)
 	PLD(	add	r8, #(3 * L1_CACHE_BYTES)	)
 	PLD(	blt	4f				)
-
+	PLD(	cmp	r8, r3				)
+	PLD(	sub	r9, r3, r1			)
 		/*
         	 * "Catch-up" the early preloads (which have been performed up
 		 * to aligned base + 2 * L1_CACHE_BYTES) to the preload offset
 		 * used in the main loop.
 	         */
-	PLD(	cmp	r8, r3				)
 	PLD(	bge	41f				)
 42:	PLD(	add	r8, r8, #L1_CACHE_BYTES		)
 	PLD(	cmp	r8, r3				)
@@ -671,6 +703,4 @@
 22:
 	.endm
 
-	.macro	copy_abort_end
-	exit_no_regs
-	.endm
+
