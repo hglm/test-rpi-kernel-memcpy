@@ -357,8 +357,8 @@
 39:		exit_no_regs
 
 33:		/* Unaligned case, >= 4 bytes. */
-		sub	r2, r2, #4
 		ands	ip, r0, #3
+		sub	r2, r2, #4
 		bne	9f
 		ands	ip, r1, #3
 		b	10f
