@@ -8,7 +8,7 @@
 #endif
 
 #if __LINUX_ARM_ARCH__ == 6
-#define PREFETCH_DISTANCE 4
+#define PREFETCH_DISTANCE 3
 #else
 #define PREFETCH_DISTANCE 3
 #endif
