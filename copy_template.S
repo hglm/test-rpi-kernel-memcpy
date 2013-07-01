@@ -187,8 +187,18 @@
 		/* In the case of regular memcpy, SMALL_SIZE_THRESHOLD >= 15
 		 * which means that the number of bytes >= 16 when we get here.
 		 */
+/* The optimal value for EARLY_PREFETCHES was determined emperically. */
+#if L1_CACHE_BYTES == 32
+#define EARLY_PREFETCHES (PREFETCH_DISTANCE + 1)
+#else	/* L1_CACHE_BYTES == 64 */
+#if PREFETCH_DISTANCE <= 2
+#define EARLY_PREFETCHES 2
+#else
+#define EARLY_PREFETCHES (PREFETCH_DISTANCE - 1)
+#endif
+#endif
 .macro check_preload bytes_to_go
-.if \bytes_to_go >= (PREFETCH_DISTANCE * L1_CACHE_BYTES) && \
+.if \bytes_to_go >= (EARLY_PREFETCHES * L1_CACHE_BYTES) && \
 (\bytes_to_go % L1_CACHE_BYTES) == 0
 	PLD(	pld     [r1, r5]	)
 	NO_PLD(	nop )
@@ -203,16 +213,23 @@
                  * Use a heuristic to determine whether the preload
 		 * at aligned_base + 2 * L1_CACHE_BYTES will be useful.
 		 */
+#if EARLY_PREFETCHES >= 3
 	PLD(	cmp	r2, #(2 * L1_CACHE_BYTES - L1_CACHE_BYTES / 2)	)
-	PLD(	add	r5, ip, #((PREFETCH_DISTANCE + 1) * L1_CACHE_BYTES) )
+#endif
+	PLD(	add	r5, ip, #(EARLY_PREFETCHES * L1_CACHE_BYTES) )
+#if EARLY_PREFETCHES >= 3
 	PLD(	blt	40f			)
-#if PREFETCH_DISTANCE == 3
+#endif
+#if EARLY_PREFETCHES == 3
+	PLD(	pld	[ip, #(2 * L1_CACHE_BYTES)] )
+#endif
+#if EARLY_PREFETCHES == 4
 	PLD(	cmp	r2, #(3 * L1_CACHE_BYTES - L1_CACHE_BYTES / 2)	)
 	PLD(	pld	[ip, #(2 * L1_CACHE_BYTES)] )
 	PLD(	blt	40f			)
 	PLD(	pld	[ip, #(3 * L1_CACHE_BYTES)] )
 #endif
-#if PREFETCH_DISTANCE >= 4
+#if EARLY_PREFETCHES == 5
 	PLD(	cmp	r2, #(3 * L1_CACHE_BYTES - L1_CACHE_BYTES / 2)	)
 	PLD(	pld	[ip, #(2 * L1_CACHE_BYTES)] )
 	PLD(	blt	40f			)
@@ -221,11 +238,20 @@
 	PLD(	blt	40f			)
 	PLD(	pld	[ip, #(4 * L1_CACHE_BYTES)] )
 #endif
-40:	PLD(	tst	r3, #16			)
+40:		/*
+		 * Set r5 so that the next preload will occur
+		 * exactly at aligned_base + EARLY_PREFETCHES * 
+		 * L1_CACHE_BYTES. For example, if L1_CACHE_BYTES is 64
+		 * and the number of bytes is 240, the next preload
+		 * will occur after processing 48 bytes, which is derived
+		 * from the formula r3 & (L1_CACHE_BYTES - 1),
+		 * where r3 is equal to number_of_bytes & (~15).
+		 */
 		rsb	r4, r3, #256
-	PLD(	subne	r5, r5, #16		)
+	PLD(	sub	r5, r5, r1			)
+	PLD(	and	ip, r3, #(L1_CACHE_BYTES - 1)	)
 		sub	r2, r2, r3
-	PLD(	sub	r5, r5, r1		)
+	PLD(	sub	r5, r5, ip			)
 		add	pc, pc, r4
 		nop
 		/* 256 bytes to go. */
