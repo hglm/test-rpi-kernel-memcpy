@@ -64,7 +64,7 @@ static memcpy_func_type copy_page_orig_wrapper(void *dest, const void *src, size
 }
 
 static const char *memcpy_variant_name[NU_MEMCPY_VARIANTS] = {
-    "standard memcpy",
+    "libc memcpy",
     "kernel memcpy (original)",
     "kernel memcpy (optimized)",
     "kernel copy_page (original)",
@@ -90,7 +90,7 @@ static memset_func_type memzero_wrapper(void *dest, int c, size_t n) {
 }
 
 static const char *memset_variant_name[NU_MEMSET_VARIANTS] = {
-    "standard memset",
+    "libc memset",
     "kernel memset (original)",
     "kernel memset (optimized)",
     "kernel memzero (original)",

@@ -22,6 +22,10 @@
 	W(ldr) \reg, [\ptr], #4
 	.endm
 
+	.macro ldr1wcond ptr reg cond abort
+	W(ldr\cond) \reg, [\ptr], #4
+	.endm
+
 #ifdef COPY_FUNCTION_FROM_USER
         .macro ldr4w ptr reg1 reg2 reg3 reg4 abort
         ldr1w \ptr, \reg1, \abort
@@ -52,6 +56,10 @@
 
 	.macro str1w ptr reg abort
 	W(str) \reg, [\ptr], #4
+	.endm
+
+	.macro str1wcond ptr reg cond abort
+	W(str\cond) \reg, [\ptr], #4
 	.endm
 
 #ifdef COPY_FUNCTION_TO_USER

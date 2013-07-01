@@ -10,6 +10,9 @@
  *  This program is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License version 2 as
  *  published by the Free Software Foundation.
+ *
+ *  Optimization for modern ARM platforms
+ *  Copyright 2013 Harm Hanemaaijer
  */
 
 /*
@@ -27,6 +30,11 @@
  *	This loads one word from 'ptr', stores it in 'reg' and increments
  *	'ptr' to the next word. The 'abort' argument is used for fixup tables.
  *
+ * ldr1wcond ptr reg cond abort
+ *
+ *	Similar to ldr1w, but also applies the condition code if provided,
+ *	otherwise the "al" condition is assumed by default.
+ *
  * ldr4w ptr reg1 reg2 reg3 reg4 abort
  * ldr8w ptr, reg1 reg2 reg3 reg4 reg5 reg6 reg7 reg8 abort
  *
@@ -41,6 +49,7 @@
  *	"al" condition is assumed by default.
  *
  * str1w ptr reg abort
+ * str1wcond ptr reg abort
  * str4w ptr reg1 reg2 reg3 reg4 abort
  * str8w ptr reg1 reg2 reg3 reg4 reg5 reg6 reg7 reg8 abort
  * str1b ptr reg cond abort
@@ -124,7 +133,7 @@
 #define FAST_PATH_SIZE_THRESHOLD 256
 #endif
 #ifdef COPY_FUNCTION_FROM_USER
-#define SMALL_SIZE_THRESHOLD 8
+#define SMALL_SIZE_THRESHOLD 7
 /*
  * For copy_from_user, the fast path is unoptimal for sizes greater or
  * equal to about 96 bytes.
@@ -133,7 +142,7 @@
 #define DISABLE_WRITE_ALIGNMENT
 #endif
 #ifdef COPY_FUNCTION_TO_USER
-#define SMALL_SIZE_THRESHOLD 8
+#define SMALL_SIZE_THRESHOLD 7
 /*
  * When copy_to_user_memcpy is enabled in the kernel configuration
  * (CONFIG_UACCESS_WITH_MEMCPY), the assembler copy_to_user function
@@ -160,9 +169,9 @@
                  */
 		cmp	r2, #SMALL_SIZE_THRESHOLD
 		/* Calculate the aligned base for preloads. */
-		bic	ip, r1, #(L1_CACHE_BYTES - 1)
+	PLD(	bic	ip, r1, #(L1_CACHE_BYTES - 1)	)
 		enter_no_regs
-		pld	[ip]
+	PLD(	pld	[ip]				)
 		orr	r3, r0, r1
 		ble	36f
 		cmp	r2, #FAST_PATH_SIZE_THRESHOLD
@@ -195,13 +204,29 @@
 		 * at aligned_base + 2 * L1_CACHE_BYTES will be useful.
 		 */
 	PLD(	cmp	r2, #(2 * L1_CACHE_BYTES - L1_CACHE_BYTES / 2)	)
-	PLD(	add	r5, ip, #(3 * L1_CACHE_BYTES) )
-		sub	r2, r2, r3
-	PLD(	blt	40f	)
+	PLD(	add	r5, ip, #((PREFETCH_DISTANCE + 1) * L1_CACHE_BYTES) )
+	PLD(	blt	40f			)
+#if PREFETCH_DISTANCE == 3
+	PLD(	cmp	r2, #(3 * L1_CACHE_BYTES - L1_CACHE_BYTES / 2)	)
 	PLD(	pld	[ip, #(2 * L1_CACHE_BYTES)] )
-40:		rsb	r3, r3, #256
+	PLD(	blt	40f			)
+	PLD(	pld	[ip, #(3 * L1_CACHE_BYTES)] )
+#endif
+#if PREFETCH_DISTANCE >= 4
+	PLD(	cmp	r2, #(3 * L1_CACHE_BYTES - L1_CACHE_BYTES / 2)	)
+	PLD(	pld	[ip, #(2 * L1_CACHE_BYTES)] )
+	PLD(	blt	40f			)
+	PLD(	cmp	r2, #(4 * L1_CACHE_BYTES - L1_CACHE_BYTES / 2)	)
+	PLD(	pld	[ip, #(3 * L1_CACHE_BYTES)] )
+	PLD(	blt	40f			)
+	PLD(	pld	[ip, #(4 * L1_CACHE_BYTES)] )
+#endif
+40:	PLD(	tst	r3, #16			)
+		rsb	r4, r3, #256
+	PLD(	subne	r5, r5, #16		)
+		sub	r2, r2, r3
 	PLD(	sub	r5, r5, r1		)
-		add	pc, pc, r3
+		add	pc, pc, r4
 		nop
 		/* 256 bytes to go. */
 		check_preload 256
@@ -321,9 +346,8 @@
 		str1w	r0, ip, abort=22f
 		bge	32b
 		tst	r2, #4
-		beq	34f
-		ldr1w	r1, r3, abort=22f
-		str1w	r0, r3, abort=22f
+		ldr1wcond r1, r3, ne, abort=22f
+		str1wcond r0, r3, ne, abort=22f
 #endif
 34:		tst	r2, #3
 		bne	38f
@@ -335,6 +359,25 @@
 		 * or word aligned source and destination; otherwise, branch
 		 * to the general case.
                  */
+#if SMALL_SIZE_THRESHOLD <= 7
+		tst	r3, #3		/* Sets the carry flag. */
+		cmpne	r2, #3
+		bhi	37f		/* Branch if cs and ne. */
+		/*
+		 * Word aligned source and destination, >= 4 bytes and <= 7,
+		 * or unaligned, < 4 bytes.
+		 */
+		tst	r2, #4
+		ldr1wcond r1, r3, ne, abort=22f
+		str1wcond r0, r3, ne, abort=22f
+		tst	r2, #3
+#ifdef COPY_FUNCTION_MEMCPY
+		ldmeqfd	sp!, {r0}
+		moveq	pc, lr
+#else
+		beq	39f
+#endif
+#else
 		cmp	r2, #4
 		blt	38f
 		tst	r3, #3
@@ -347,6 +390,7 @@
 		bgt	44b
 		adds	r2, r2, #3
 		beq	39f
+#endif
 38:		movs	r2, r2, lsl #31
 		ldr1b	r1, r3, ne, abort=22f
 		ldr1b	r1, ip, cs, abort=22f
@@ -384,7 +428,7 @@
 		 */
 37:		tst	r3, #3
 		stmdb	sp!, {r4, lr}
-		mov	r3, ip
+	PLD(	mov	r3, ip			)
 	PLD(	pld	[ip, #L1_CACHE_BYTES]	)
 		bne	33b	/* Unaligned. */
 
@@ -401,7 +445,7 @@
 37:		stmdb	sp!, {r4, lr}
 
 33:		subs	r2, r2, #4
-		mov	r3, ip
+	PLD(	mov	r3, ip			)
 		blt	8f
 		ands	ip, r0, #3
 	PLD(	pld	[r3, #L1_CACHE_BYTES]	)
@@ -411,7 +455,7 @@
 
 1:		subs	r2, r2, #(28)
 		stmfd	sp!, {r5 - r9}
-		mov	r8, r3
+	PLD(	mov	r8, r3			)
 		blt	5f
 #endif
 
@@ -484,15 +528,15 @@
 	PLD(	cmn	r2, #(PREFETCH_DISTANCE * 32)	)
 	PLD(	bge	4b			)
 .else /* L1_CACHE_BYTES == 64 */
-3:		pld	[r1, r9]
+3:	PLD(	pld	[r1, r9]		)
 4:		ldr8w	r1, r3, r4, r5, r6, r7, r8, ip, lr, abort=20f
 		subs	r2, r2, #64
 		str8w	r0, r3, r4, r5, r6, r7, r8, ip, lr, abort=20f
 		ldr8w	r1, r3, r4, r5, r6, r7, r8, ip, lr, abort=20f
 		str8w	r0, r3, r4, r5, r6, r7, r8, ip, lr, abort=20f
 		bge	3b
-		cmn	r2, #(PREFETCH_DISTANCE * 64)
-		bge	4b
+	PLD(	cmn	r2, #(PREFETCH_DISTANCE * 64)	)
+	PLD(	bge	4b				)
 
 30:		tst     r2, #32
 		beq	31f

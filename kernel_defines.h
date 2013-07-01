@@ -7,7 +7,11 @@
 #define L1_CACHE_BYTES 32
 #endif
 
+#if __LINUX_ARM_ARCH__ == 6
+#define PREFETCH_DISTANCE 4
+#else
 #define PREFETCH_DISTANCE 3
+#endif
 #define PAGE_SZ 4096
 
 #define PLD(code...) code
