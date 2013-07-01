@@ -533,10 +533,10 @@
 	PLD(	cmp	r8, r3				)
 	PLD(	sub	r9, r3, r1			)
 		/*
-        	 * "Catch-up" the early preloads (which have been performed up
+		 * "Catch-up" the early preloads (which have been performed up
 		 * to aligned base + 2 * L1_CACHE_BYTES) to the preload offset
 		 * used in the main loop.
-	         */
+		 */
 	PLD(	bge	41f				)
 42:	PLD(	add	r8, r8, #L1_CACHE_BYTES		)
 	PLD(	cmp	r8, r3				)
@@ -772,5 +772,4 @@
 21:	ldmfd	sp!, {r4, lr}
 22:
 	.endm
-
 
