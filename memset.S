@@ -12,7 +12,9 @@
 #include "kernel_defines.h"
 
 	.text
+#ifndef CONFIG_THUMB2_KERNEL
 	.p2align 5
+#endif
 
 ENTRY(kernel_memset)
 	ands	r3, r0, #3		@ 1 unaligned?

@@ -26,7 +26,9 @@
 #define COPY_COUNT (PAGE_SZ / (L1_CACHE_BYTES))
 
 		.text
+#ifndef CONFIG_KERNEL_THUMB2
 		.p2align	5
+#endif
 /*
  * StrongARM optimised copy_page routine
  * now 1.78bytes/cycle, was 1.60 bytes/cycle (50MHz bus -> 89MB/s)

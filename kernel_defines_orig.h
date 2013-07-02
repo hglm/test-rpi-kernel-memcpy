@@ -17,7 +17,11 @@
 
 #define pull            lsr
 #define push            lsl
+#ifdef CONFIG_THUMB2_KERNEL
+#define W(instr)	instr.w
+#else
 #define W(instr)        instr
+#endif
 
 .macro asm_function function_name
     .global \function_name
@@ -26,3 +30,6 @@
 \function_name:
 .endm
 
+#ifdef CONFIG_THUMB2_KERNEL
+.syntax unified
+#endif

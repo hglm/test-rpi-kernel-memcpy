@@ -108,7 +108,9 @@
 	.endm
 
 	.text
+#ifndef CONFIG_KERNEL_THUMB2
 	.p2align 5
+#endif
 
 /* Prototype: void *memcpy(void *dest, const void *src, size_t n); */
 

@@ -1,7 +1,12 @@
-# Add -DARMV7 to test armv7 (L1_CACHE_BYTES = 64), otherwise
-# armv6 is selected (L1_CACHE_BYTES = 32).
+# Change PLATFORM_CFLAGS to -DARMV7 to test armv7 (L1_CACHE_BYTES = 64),
+# otherwise armv6 is selected (L1_CACHE_BYTES = 32).
+# For ARMV7, uncomment the two lines defining THUMB2_CFLAGS to enable
+# Thumb2 mode.
 
-CFLAGS = -std=gnu99 -Ofast -Wall -DARMV6
+PLATFORM_CFLAGS = -DARMV6
+#THUMB2_CFLAGS = -march=armv7-a -Wa,-march=armv7-a -mthumb -Wa,-mthumb -Wa,-mimplicit-it=always \
+#-mno-thumb-interwork -DCONFIG_THUMB2_KERNEL
+CFLAGS = -std=gnu99 -Ofast -Wall $(PLATFORM_CFLAGS) $(THUMB2_CFLAGS)
 
 all : benchmark
 

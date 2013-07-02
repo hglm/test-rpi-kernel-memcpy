@@ -197,17 +197,45 @@
 #define EARLY_PREFETCHES (PREFETCH_DISTANCE - 1)
 #endif
 #endif
-.macro check_preload bytes_to_go
-.if \bytes_to_go >= (EARLY_PREFETCHES * L1_CACHE_BYTES) && \
-(\bytes_to_go % L1_CACHE_BYTES) == 0
-	PLD(	pld     [r1, r5]	)
-	NO_PLD(	nop )
-.else
+		.macro copy_16_bytes bytes_to_go
+#ifdef CONFIG_THUMB2_KERNEL
+		/*
+		 * When Thumb2 mode is enabled, the ldmia/stmia instructions
+		 * will be 16 bits, and the preload instruction will be
+		 * 32 bits, so we only need one 32-bit wide nop instruction
+		 * when there's no preload, for a total size of two words.
+		 */
+		.if \bytes_to_go >= (EARLY_PREFETCHES * L1_CACHE_BYTES) && \
+		(\bytes_to_go % L1_CACHE_BYTES) == 0
+	PLD(	pld     [r1, ip]	)
+	NO_PLD(	W(nop)	)
+		ldmia	r1!, {r3, r4, r5, r6}
+		stmia	r0!, {r3, r4, r5, r6}
+		.else
+		ldmia	r1!, {r3, r4, r5, r6}
+		W(nop)
+		stmia	r0!, {r3, r4, r5, r6}
+		.endif
+#else
+		/*
+		 * When ARM mode is enabled, every instruction is one word,
+		 * so make sure the entire block is four instructions.
+		 */
+		.if \bytes_to_go >= (EARLY_PREFETCHES * L1_CACHE_BYTES) && \
+		(\bytes_to_go % L1_CACHE_BYTES) == 0
+	PLD(	pld     [r1, ip]	)
+	NO_PLD(	nop	)
+		.else
 		nop
-.endif
+		.endif
+		ldmia	r1!, {r3, r4, r5, r6}
+		nop
+		stmia	r0!, {r3, r4, r5, r6}
+#endif
 .endm
+
 	PLD(	pld	[ip, #L1_CACHE_BYTES] )
-		stmdb	sp!, {r4, r5, lr}
+		stmdb	sp!, {r4, r5, r6}
 		bic	r3, r2, #15
 		/*
                  * Use a heuristic to determine whether the preload
@@ -251,92 +279,52 @@
 	PLD(	sub	r5, r5, r1			)
 	PLD(	and	ip, r3, #(L1_CACHE_BYTES - 1)	)
 		sub	r2, r2, r3
-	PLD(	sub	r5, r5, ip			)
+#ifdef CONFIG_THUMB2_KERNEL
+		lsr	r4, r4, #1
+#endif
+	PLD(	sub	ip, r5, ip			)
 		add	pc, pc, r4
 		nop
-		/* 256 bytes to go. */
-		check_preload 256
-		ldmia	r1!, {r3, r4, ip, lr}
-		nop
-		stmia	r0!, {r3, r4, ip, lr}
-		/* 240 bytes go. */
-		nop
-		ldmia	r1!, {r3, r4, ip, lr}
-		nop
-		stmia	r0!, {r3, r4, ip, lr}
-		/* 224 bytes to go. */
-		check_preload 224
-		ldmia	r1!, {r3, r4, ip, lr}
-		nop
-		stmia	r0!, {r3, r4, ip, lr}
-		/* 204 bytes go. */
-		nop
-		ldmia	r1!, {r3, r4, ip, lr}
-		nop
-		stmia	r0!, {r3, r4, ip, lr}
-		/* 192 bytes to go. */
-		check_preload 192
-		ldmia	r1!, {r3, r4, ip, lr}
-		nop
-		stmia	r0!, {r3, r4, ip, lr}
-		/* 176 bytes go. */
-		nop
-		ldmia	r1!, {r3, r4, ip, lr}
-		nop
-		stmia	r0!, {r3, r4, ip, lr}
-		/* 160 bytes to go. */
-		check_preload 160
-		ldmia	r1!, {r3, r4, ip, lr}
-		nop
-		stmia	r0!, {r3, r4, ip, lr}
-		/* 144 bytes go. */
-		nop
-		ldmia	r1!, {r3, r4, ip, lr}
-		nop
-		stmia	r0!, {r3, r4, ip, lr}
-		/* 128 bytes to go. */
-		check_preload 128
-		ldmia	r1!, {r3, r4, ip, lr}
-		nop
-		stmia	r0!, {r3, r4, ip, lr}
-		/* 112 bytes go. */
-		nop
-		ldmia	r1!, {r3, r4, ip, lr}
-		nop
-		stmia	r0!, {r3, r4, ip, lr}
-		/* 96 bytes to go. */
-		check_preload 96
-		ldmia	r1!, {r3, r4, ip, lr}
-		nop
-		stmia	r0!, {r3, r4, ip, lr}
-		/* 90 bytes to go. */
-		nop
-		ldmia	r1!, {r3, r4, ip, lr}
-		nop
-		stmia	r0!, {r3, r4, ip, lr}
-		/* 64 bytes to go. */
-		check_preload 64
-		ldmia	r1!, {r3, r4, ip, lr}
-		nop
-		stmia	r0!, {r3, r4, ip, lr}
-		nop
-		ldmia	r1!, {r3, r4, ip, lr}
-		nop
-		stmia	r0!, {r3, r4, ip, lr}
-		nop
-		ldmia	r1!, {r3, r4, ip, lr}
-		nop
-		stmia	r0!, {r3, r4, ip, lr}
+		/* >= 256 bytes to go. */
+		copy_16_bytes 256
+		/* >= 240 bytes go. */
+		copy_16_bytes 240
+		/* >= 224 bytes to go. */
+		copy_16_bytes 224
+		/* >= 204 bytes go. */
+		copy_16_bytes 204
+		/* >= 192 bytes to go. */
+		copy_16_bytes 192
+		/* >= 176 bytes go. */
+		copy_16_bytes 176
+		/* >= 160 bytes to go. */
+		copy_16_bytes 160
+		/* >= 144 bytes go. */
+		copy_16_bytes 144
+		/* >= 128 bytes to go. */
+		copy_16_bytes 128
+		/* >= 112 bytes go. */
+		copy_16_bytes 112
+		/* >= 96 bytes to go. */
+		copy_16_bytes 96
+		/* >= 80 bytes to go. */
+		copy_16_bytes 80
+		/* >= 64 bytes to go. */
+		copy_16_bytes 64
+		/* >= 48 bytes to go. */
+		copy_16_bytes 48
+		/* >= 32 bytes to go. */
+		copy_16_bytes 32
 		/* At this point there are 16 to 31 bytes to go. */
 		tst	r2, #15
-		ldmia	r1!, {r3, r4, ip, lr}
+		ldmia	r1!, {r3, r4, r5, r6}
 		cmpne	r2, #8
 		/*
 		 * If r2 == 8, we need to clear the eq flag while
 		 * making sure carry remains set.
 		 */
 		tsteq	r2, #15
-		stmia	r0!, {r3, r4, ip, lr}
+		stmia	r0!, {r3, r4, r5, r6}
 		/*
 		 * The equal is set if there are no bytes left.
 		 * The carry flag is set is there are >= 8 bytes left.
@@ -347,14 +335,14 @@
 		strcs	ip, [r0], #4
 		strcs	r3, [r0], #4
 		tst	r2, #4
-		ldmfd	sp!, {r4, r5, lr}
+		ldmfd	sp!, {r4, r5, r6}
 		ldrne	ip, [r1], #4
 		strne	ip, [r0], #4
 		tst	r2, #3
 		ldmeqfd	sp!, {r0}
 		moveq	pc, lr
 		b	38f
-43:		ldmfd	sp!, {r4, r5, lr}
+43:		ldmfd	sp!, {r4, r5, r6}
 		ldmfd	sp!, {r0}
 		mov	pc, lr
 #else
@@ -419,8 +407,8 @@
 #endif
 38:		movs	r2, r2, lsl #31
 		ldr1b	r1, r3, ne, abort=22f
-		ldr1b	r1, ip, cs, abort=22f
 		str1b	r0, r3, ne, abort=22f
+		ldr1b	r1, ip, cs, abort=22f
 		ldr1b	r1, r3, cs, abort=22f
 		str1b	r0, ip, cs, abort=22f
 		str1b	r0, r3, cs, abort=22f
@@ -634,9 +622,9 @@
 
 8:		movs	r2, r2, lsl #31
 		ldr1b	r1, r3, ne, abort=21f
+		str1b	r0, r3, ne, abort=21f
 		ldr1b	r1, r4, cs, abort=21f
 		ldr1b	r1, ip, cs, abort=21f
-		str1b	r0, r3, ne, abort=21f
 		str1b	r0, r4, cs, abort=21f
 		str1b	r0, ip, cs, abort=21f
 
