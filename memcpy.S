@@ -14,8 +14,8 @@
 
 #define LDR1W_SHIFT	0
 #define STR1W_SHIFT	0
-// #define COPY_FUNCTION_MEMCPY
-#define COPY_FUNCTION_FROM_USER
+#define COPY_FUNCTION_MEMCPY
+// #define COPY_FUNCTION_FROM_USER
 // #define COPY_FUNCTION_TO_USER
 
 	.macro ldr1w ptr reg abort
