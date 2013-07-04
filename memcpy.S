@@ -14,8 +14,8 @@
 
 #define LDR1W_SHIFT	0
 #define STR1W_SHIFT	0
-#define COPY_FUNCTION_MEMCPY
-// #define COPY_FUNCTION_FROM_USER
+// #define COPY_FUNCTION_MEMCPY
+#define COPY_FUNCTION_FROM_USER
 // #define COPY_FUNCTION_TO_USER
 
 	.macro ldr1w ptr reg abort
@@ -23,7 +23,7 @@
 	.endm
 
 	.macro ldr1wcond ptr reg cond abort
-	W(ldr\cond) \reg, [\ptr], #4
+	ldr\cond \reg, [\ptr], #4
 	.endm
 
 #ifdef COPY_FUNCTION_FROM_USER
@@ -59,7 +59,7 @@
 	.endm
 
 	.macro str1wcond ptr reg cond abort
-	W(str\cond) \reg, [\ptr], #4
+	str\cond \reg, [\ptr], #4
 	.endm
 
 #ifdef COPY_FUNCTION_TO_USER

@@ -276,12 +276,10 @@
 		 * where r3 is equal to number_of_bytes & (~15).
 		 */
 		rsb	r4, r3, #256
-	PLD(	sub	r5, r5, r1			)
+	PLD(	subs	r5, r5, r1			)
 	PLD(	and	ip, r3, #(L1_CACHE_BYTES - 1)	)
-		sub	r2, r2, r3
-#ifdef CONFIG_THUMB2_KERNEL
-		lsr	r4, r4, #1
-#endif
+		subs	r2, r2, r3	/* Thumb16 */
+	THUMB(	lsrs	r4, r4, #1	/* Thumb16 */	)
 	PLD(	sub	ip, r5, ip			)
 		add	pc, pc, r4
 		nop
@@ -431,7 +429,7 @@
 		blt	5f
 		b	45f
 
-35:		add	r2, r2, #3
+35:		adds	r2, r2, #3	/* Thumb16 */
 
 		/*
 		 * We get here when the fast path was not selected,
@@ -485,8 +483,8 @@
 	CALGN(	strne   r4, [r0], #4		)
 	CALGN(	tst     r3, #8			)
 	CALGN(  ldmneia r1!, {r4-r5}		)
-	CALGN(	sub     r2, r2, r3		)
 	CALGN(	stmneia r0!, {r4-r5}		)
+	CALGN(	subs     r2, r2, r3		)	/* Thumb16 */
 .if WRITE_ALIGN_BYTES == 32
 	CALGN(	tst	r3, #16			)
 	CALGN(	ldmneia r1!, {r4-r7}		)
@@ -513,7 +511,7 @@
 		 */
 	PLD(	pld	[r8, #(2 * L1_CACHE_BYTES)]	)
 
-	PLD(	add     r9, r1, #(PREFETCH_DISTANCE * L1_CACHE_BYTES)	)
+	PLD(	add	r9, r1, #(PREFETCH_DISTANCE * L1_CACHE_BYTES)	)
 	PLD(	subs	r2, r2, #(PREFETCH_DISTANCE * L1_CACHE_BYTES)	)
 	PLD(	bic     r3, r9, #(L1_CACHE_BYTES - 1)			)
 	PLD(	add	r8, #(3 * L1_CACHE_BYTES)	)
@@ -526,7 +524,7 @@
 		 * used in the main loop.
 		 */
 	PLD(	bge	41f				)
-42:	PLD(	add	r8, r8, #L1_CACHE_BYTES		)
+42:	PLD(	adds	r8, r8, #L1_CACHE_BYTES		)	/* Thumb16 */
 	PLD(	cmp	r8, r3				)
 	PLD(	pld	[r8, #(- L1_CACHE_BYTES)]	)
 	PLD(	blt	42b				)
@@ -634,10 +632,10 @@
 9:		rsb	ip, ip, #4
 		cmp	ip, #2
 		ldr1b	r1, r3, gt, abort=21f
-		ldr1b	r1, r4, ge, abort=21f
-		ldr1b	r1, lr, abort=21f
 		str1b	r0, r3, gt, abort=21f
+		ldr1b	r1, r4, ge, abort=21f
 		str1b	r0, r4, ge, abort=21f
+		ldr1b	r1, lr, abort=21f
 		subs	r2, r2, ip
 		str1b	r0, lr, abort=21f
 		blt	8b
@@ -672,11 +670,11 @@
 		 */
 11:		stmfd	sp!, {r5 - r10}
 
-        PLD(    add     r10, r1, #(PREFETCH_DISTANCE * L1_CACHE_BYTES)	)
-        PLD(    bic     r3, r10, #(L1_CACHE_BYTES - 1)	)
-        PLD(    subs    r2, r2, #(PREFETCH_DISTANCE * 32)	)
-        PLD(    sub     r10, r3, r1		)
-        PLD(    blt     13f                     )
+	PLD(	add	r10, r1, #(PREFETCH_DISTANCE * L1_CACHE_BYTES)	)
+	PLD(	bic	r3, r10, #(L1_CACHE_BYTES - 1)	)
+	PLD(	subs	r2, r2, #(PREFETCH_DISTANCE * 32)	)
+	PLD(	sub	r10, r3, r1		)
+	PLD(	blt	13f			)
 .if PREFETCH_DISTANCE >= 4
 	PLD(	pld	[r3, #(- 3 * L1_CACHE_BYTES)]	)
 .endif
@@ -733,7 +731,7 @@
 	CALGN(	bge	11b			)
 #endif
 
-16:		sub	r1, r1, #(\push / 8)
+16:		subs	r1, r1, #(\push / 8)	/* Thumb16 */
 		b	8b
 
 		.endm

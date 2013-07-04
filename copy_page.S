@@ -48,21 +48,19 @@ ENTRY(kernel_copy_page)
 .endif
 .endif
 .endif
-		mov	r2, #COPY_COUNT			@	1
+		movs	r2, #COPY_COUNT			@	1
 1:	PLD(	pld	[r1, #PREFETCH_DISTANCE * L1_CACHE_BYTES])
 2:
 .if L1_CACHE_BYTES == 32
 		ldmia	r1!, {r3-r6}			@	4+1
-	PLD(	sub	r2, r2, #1		)	@	1
-	NO_PLD(	subs	r2, r2, #1		)	@	1
+		subs	r2, r2, #1			@	1
 		ldmia   r1!, {r7, r8, ip, lr}
 		stmia	r0!, {r3-r6}			@	4
 	PLD(	cmp	r2, #PREFETCH_DISTANCE	)
 		stmia   r0!, {r7, r8, ip, lr}
 .else /* L1_CACHE_BYTES == 64 */
 		ldmia   r1!, {r3-r8, ip, lr}
-	PLD(	sub	r2, r2, #1		)	@	1
-	NO_PLD(	subs	r2, r2, #1		)	@	1
+		subs	r2, r2, #1			@	1
 		stmia	r0!, {r3-r8, ip, lr}		@	4
 		ldmia   r1!, {r3-r8, ip, lr}
 	PLD(	cmp	r2, #PREFETCH_DISTANCE	)
@@ -70,7 +68,13 @@ ENTRY(kernel_copy_page)
 .endif
 	PLD(	bgt	1b			)	@	1
 	NO_PLD(	bne	1b			)
-	PLD(	teq	r2, #0			)
-	PLD(	bne	2b			)
+#ifndef GNU_AS_CBZ_NOT_BROKEN
+	PLD(	cmp	r2, #0		)
+	PLD(	bne	2b		)
+#else
+PLD(	ARM(	cmp	r2, #0		)	)
+PLD(	ARM(	bne	2b		)	)
+PLD(	THUMB(	cbnz	r2, 2b		)	)
+#endif
 		ldmfd	sp!, {r4-r8, pc}		@	3
 ENDPROC(kernel_copy_page)

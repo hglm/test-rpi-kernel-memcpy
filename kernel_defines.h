@@ -42,8 +42,12 @@
 #define push            lsl
 #ifdef CONFIG_THUMB2_KERNEL
 #define W(instr)        instr.w
+#define ARM(instr...)
+#define THUMB(instr...)	instr
 #else
 #define W(instr)        instr
+#define ARM(instr...)	instr
+#define THUMB(instr...)
 #endif
 
 .macro asm_function function_name

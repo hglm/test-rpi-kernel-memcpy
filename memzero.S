@@ -114,7 +114,7 @@ ENTRY(__kernel_memzero)
 .endif
 
 3:	stmia	r0!, {r2, r3, ip, lr}
-	sub	r1, r1, #64
+	subs	r1, r1, #64
 	stmia	r0!, {r2, r3, ip, lr}
 	cmp	r1, #64
 	stmia	r0!, {r2, r3, ip, lr}
