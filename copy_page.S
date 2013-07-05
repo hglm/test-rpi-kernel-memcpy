@@ -68,13 +68,7 @@ ENTRY(kernel_copy_page)
 .endif
 	PLD(	bgt	1b			)	@	1
 	NO_PLD(	bne	1b			)
-#ifndef GNU_AS_CBZ_NOT_BROKEN
 	PLD(	cmp	r2, #0		)
 	PLD(	bne	2b		)
-#else
-PLD(	ARM(	cmp	r2, #0		)	)
-PLD(	ARM(	bne	2b		)	)
-PLD(	THUMB(	cbnz	r2, 2b		)	)
-#endif
 		ldmfd	sp!, {r4-r8, pc}		@	3
 ENDPROC(kernel_copy_page)
