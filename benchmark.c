@@ -589,6 +589,12 @@ static void test_memset_unaligned_random_137(int i) {
         137);
 }
 
+static void test_memset_unaligned_random_1023(int i) {
+    memset_func(buffer_page + random_buffer_1024[(i * 2) & (RANDOM_BUFFER_SIZE - 1)],
+        random_buffer_1024[(i * 2 + 1) & (RANDOM_BUFFER_SIZE - 1)] & 0xFF,
+        1023);
+}
+
 static void clear_data_cache() {
     int val = 0;
     for (int i = 0; i < 1024 * 1024 * 32; i += 4) {
@@ -817,7 +823,7 @@ static test_t test[NU_TESTS] = {
     { "100 bytes word aligned", test_aligned_100, 100 },
 };
 
-#define NU_MEMSET_TESTS 22
+#define NU_MEMSET_TESTS 23
 
 static test_t memset_test[NU_MEMSET_TESTS] = {
     { "Mixed powers of 2 from 4 to 4096 (power law), word aligned", test_memset_mixed_powers_of_two_word_aligned, 2048 },
@@ -842,6 +848,7 @@ static test_t memset_test[NU_MEMSET_TESTS] = {
     { "28 bytes randomly aligned", test_memset_unaligned_random_28, 28 },
     { "64 bytes randomly aligned", test_memset_unaligned_random_64, 64 },
     { "137 bytes randomly aligned", test_memset_unaligned_random_137, 137 },
+    { "1023 bytes randomly aligned", test_memset_unaligned_random_1023, 1023 },
 };
 
 static void usage() {
