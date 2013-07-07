@@ -113,8 +113,8 @@ ARM(	beq	8f	)
 9:	ldmfd	sp!, {r5}
 
 	/* Handle 8-64 bytes. */
-7:	bics	r4, r2, #7
-	sub	r2, r2, r4
+7:	bic	r4, r2, #7
+	subs	r2, r2, r4
 	rsb	r4, r4, #64
 	/* The stmia instruction is 32-bit for ARM, 16-bit for Thumb2. */
 THUMB(	lsrs	r4, r4, #2	)

@@ -27,6 +27,17 @@
 	.endm
 
 #ifdef COPY_FUNCTION_FROM_USER
+        .macro ldr2w ptr reg1 reg2 abort
+        ldr1w \ptr, \reg1, \abort
+        ldr1w \ptr, \reg2, \abort
+	.endm
+#else
+        .macro ldr2w ptr reg1 reg2 abort
+	ldmia \ptr!, {\reg1, \reg2}
+	.endm
+#endif
+
+#ifdef COPY_FUNCTION_FROM_USER
         .macro ldr4w ptr reg1 reg2 reg3 reg4 abort
         ldr1w \ptr, \reg1, \abort
         ldr1w \ptr, \reg2, \abort
@@ -61,6 +72,17 @@
 	.macro str1wcond ptr reg cond abort
 	str\cond \reg, [\ptr], #4
 	.endm
+
+#ifdef COPY_FUNCTION_TO_USER
+        .macro str2w ptr reg1 reg2 abort
+        str1w \ptr, \reg1, \abort
+        str1w \ptr, \reg2, \abort
+        .endm
+#else
+	.macro str2w ptr reg1 reg2 abort
+	stmia \ptr!, {\reg1, \reg2}
+	.endm
+#endif
 
 #ifdef COPY_FUNCTION_TO_USER
         .macro str4w ptr reg1 reg2 reg3 reg4 abort

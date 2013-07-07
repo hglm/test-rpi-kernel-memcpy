@@ -158,6 +158,7 @@
 #endif
 
 #define OPTIMIZE_WITH_FAST_PATH
+#define DISABLE_WRITE_ALIGNMENT_FOR_UNALIGNED_CASE
 
 #ifdef OPTIMIZE_WITH_FAST_PATH
 		/*
@@ -350,12 +351,20 @@
 		 * decreased overhead this can be a big win for small
 		 * sizes which are very common.
 		 */
-32:		ldr1w	r1, r3, abort=22f
+32:
+#ifdef COPY_FUNCTION_FROM_USER
+		ldr1w	r1, r3, abort=22f
 		cmp	r2, #16
 		ldr1w	r1, ip, abort=22f
-		str1w	r0, r3, abort=22f
+		sub	r2, r2, #8
+		str2w	r0, r3, ip, abort=22f
+#else	/* COPY_FUNCTION_TO_USER */
+		cmp	r2, #16
+		ldr2w	r1, r3, ip, abort=22f
+		str1w	r1, r3, abort=22f
 		sub	r2, r2, #8
 		str1w	r0, ip, abort=22f
+#endif
 		bge	32b
 		tst	r2, #4
 		ldr1wcond r1, r3, ne, abort=22f
@@ -426,8 +435,34 @@
 		subs	r2, r2, #28
 		stmfd	sp!, {r5 - r9}
 		mov	r8, r3
+		/* Correct the count when jumping to the tail, */
+		addlt	r2, r2, #32
 		blt	5f
+#if defined(COPY_FUNCTION_MEMCPY) && (WRITE_ALIGN_BYTES >= 32 \
+|| WRITE_ALIGN_BYTES == 0)
+		/*
+		 * When the fast path is enabled and WRITE_ALIGN_BYTES >= 32,
+		 * the main code path assumes there are enough bytes for
+		 * alignment plus one iteration of the main loop (L1_CACHE_BYTES),
+		 * so alignment and size check are handled here.
+		 * Additionally, when WRITE_ALIGN_BYTES == 0, perform the size
+		 * check for the main loop here.
+		 */
+#if WRITE_ALIGN_BYTES >= 32
+		/* WRITE_ALIGN_BYTES <= 32, so there are enough bytes. */
+	CALGN(	ands	r3, r0, #(WRITE_ALIGN_BYTES - 1)	)
+	CALGN(	rsb	r3, r3, #WRITE_ALIGN_BYTES		)
+	CALGN(	blne	50f					)
+#endif
+		/* The main loop handles L1_CACHE_BYTES at a time. */
+		cmp	r2, #(L1_CACHE_BYTES - 32)
+		/* Correct the count when jumping to the tail, */
+		addlt	r2, r2, #32
+		blt	5f
+		b	2f
+#else
 		b	45f
+#endif
 
 35:		adds	r2, r2, #3	/* Thumb16 */
 
@@ -468,29 +503,41 @@
 1:		subs	r2, r2, #(28)
 		stmfd	sp!, {r5 - r9}
 	PLD(	mov	r8, r3			)
+		/* Correct the count when jumping to the tail, */
+		addlt	r2, r2, #32
 		blt	5f
 #endif
 
 #ifndef DISABLE_WRITE_ALIGNMENT
+#ifdef COPY_FUNCTION_MEMCPY
+#if WRITE_ALIGN_BYTES >= 32 && defined(OPTIMIZE_WITH_FAST_PATH)
+	CALGN(	ands	r3, r0, #(WRITE_ALIGN_BYTES - 1)	)
+	CALGN(	rsb	r3, r3, #WRITE_ALIGN_BYTES		)
+	CALGN(	blne	50f					)
+#else
 	CALGN(	ands	ip, r0, #(WRITE_ALIGN_BYTES - 1)	)
 	CALGN(	rsb	r3, ip, #WRITE_ALIGN_BYTES		)
 	CALGN(	sbcnes	r4, r3, r2		)  @ C is always set here
 	CALGN(	bcs	2f			)
-#ifdef COPY_FUNCTION_MEMCPY
-		/* For regular memcpy, use conditional multiloads/stores. */
-	CALGN(	tst     r3, #4			)
-	CALGN(	ldrne   r4, [r1], #4		)
-	CALGN(	strne   r4, [r0], #4		)
-	CALGN(	tst     r3, #8			)
+	/* For regular memcpy, use conditional multiloads/stores. */
+	CALGN(	tst	r3, #4			)
+	CALGN(	ldrne	r4, [r1], #4		)
+	CALGN(	strne	r4, [r0], #4		)
+	CALGN(	tst	r3, #8			)
 	CALGN(  ldmneia r1!, {r4-r5}		)
 	CALGN(	stmneia r0!, {r4-r5}		)
-	CALGN(	subs     r2, r2, r3		)	/* Thumb16 */
-.if WRITE_ALIGN_BYTES == 32
+	CALGN(	subs	r2, r2, r3		)	/* Thumb16 */
+#if WRITE_ALIGN_BYTES == 32
 	CALGN(	tst	r3, #16			)
-	CALGN(	ldmneia r1!, {r4-r7}		)
+	CALGN(  ldmneia r1!, {r4-r7}		)
 	CALGN(	stmneia r0!, {r4-r7}		)
-.endif
+#endif
+#endif
 #else
+	CALGN(	ands	ip, r0, #(WRITE_ALIGN_BYTES - 1)	)
+	CALGN(	rsb	r3, ip, #WRITE_ALIGN_BYTES		)
+	CALGN(	sbcnes	r4, r3, r2		)  @ C is always set here
+	CALGN(	bcs	2f			)
 	CALGN(	adr	r4, 6f			)
 .if WRITE_ALIGN_BYTES == 16
 	CALGN(  add	ip, ip, #16		)
@@ -501,10 +548,19 @@
 #endif
 
 2:
-.if L1_CACHE_BYTES == 64
-		subs    r2, r2, #32
+#if L1_CACHE_BYTES == 64
+#if defined(COPY_FUNCTION_MEMCPY) && defined(OPTIMIZE_WITH_FAST_PATH) \
+&& (WRITE_ALIGN_BYTES == 0 || WRITE_ALIGN_BYTES >= 32)
+		/* No check necessary. */
+		subs	r2, r2, #32
+#else
+		cmp	r2, #32
+		/* Correct the count when jumping to the tail, */
+		addlt	r2, r2, #32
 		blt     30f
-.endif
+		subs	r2, r2, #32
+#endif
+#endif
 		/*
                  * Assume a preload at aligned base + 2 * L1_CACHE_BYTES will
 		 * be useful.
@@ -539,6 +595,9 @@
 		bge	3b
 	PLD(	cmn	r2, #(PREFETCH_DISTANCE * 32)	)
 	PLD(	bge	4b			)
+		/* Correct the count. */
+	PLD(	adds	r2, r2, #(PREFETCH_DISTANCE * L1_CACHE_BYTES + 32)	)
+	NO_PLD(	add	r2, r2, #32						)
 .else /* L1_CACHE_BYTES == 64 */
 3:	PLD(	pld	[r1, r9]		)
 4:		ldr8w	r1, r3, r4, r5, r6, r7, r8, ip, lr, abort=20f
@@ -549,21 +608,25 @@
 		bge	3b
 	PLD(	cmn	r2, #(PREFETCH_DISTANCE * 64)	)
 	PLD(	bge	4b				)
-
-30:		tst     r2, #32
-		beq	31f
-		ldr8w	r1, r3, r4, r5, r6, r7, r8, ip, lr, abort=20f
-		str8w	r0, r3, r4, r5, r6, r7, r8, ip, lr, abort=20f
-31:
+		/* Correct the count. */
+	PLD(	adds	r2, r2, #(PREFETCH_DISTANCE * L1_CACHE_BYTES + 64)	)
+	NO_PLD( add	r2, r2, #64						)
 .endif
-
+30:
 5:
 #ifdef COPY_FUNCTION_MEMCPY
+		ands	r3, r2, #60
+		blne	50f
+#if 0
 		/*
 		 * For regular memcpy, use conditional multiloads/stores
 		 * for the tail.
 		 */
-		tst     r2, #16
+		tst     r2, #32
+		beq	31f
+		ldmneia	r1!, {r3, r4, r5, r6, r7, r8, ip, lr}
+		stmneia	r0!, {r3, r4, r5, r6, r7, r8, ip, lr}
+31:		tst     r2, #16
 		ldmneia r1!, {r4-r7}
 		stmneia r0!, {r4-r7}
 		tst     r2, #8
@@ -572,8 +635,15 @@
 		tst     r2, #4
 		ldrne   r4, [r1], #4
 		strne   r4, [r0], #4
-		b	7f
+#endif
 #else
+.if L1_CACHE_BYTES == 64
+		tst     r2, #32
+		beq	31f
+		ldr8w	r1, r3, r4, r5, r6, r7, r8, ip, lr, abort=20f
+		str8w	r0, r3, r4, r5, r6, r7, r8, ip, lr, abort=20f
+31:
+.endif
 		ands	ip, r2, #28
 		rsb	ip, ip, #32
 #if LDR1W_SHIFT > 0
@@ -629,6 +699,40 @@
 		ldmfd	sp!, {r4, lr}
 		exit_no_regs
 
+#ifdef COPY_FUNCTION_MEMCPY
+		/*
+		 * Subroutine that copies a multiple of 4 bytes of size
+		 * r3 from 0 to 64 bytes. r2 is decremented by the number
+		 * of bytes copied.
+		 */
+50:		tst     r3, #4
+		sub	r2, r2, r3
+		ldrne   r4, [r1], #4
+		subne	r3, r3, #4
+		strne   r4, [r0], #4
+		rsb	r3, r3, #64
+	THUMB(	lsrs	r3, r3, #1	)
+		add	pc, pc, r3
+		nop
+		ldmia	r1!, {r3, r4}
+		stmia	r0!, {r3, r4}
+		ldmia	r1!, {r3, r4}
+		stmia	r0!, {r3, r4}
+		ldmia	r1!, {r3, r4}
+		stmia	r0!, {r3, r4}
+		ldmia	r1!, {r3, r4}
+		stmia	r0!, {r3, r4}
+		ldmia	r1!, {r3, r4}
+		stmia	r0!, {r3, r4}
+		ldmia	r1!, {r3, r4}
+		stmia	r0!, {r3, r4}
+		ldmia	r1!, {r3, r4}
+		stmia	r0!, {r3, r4}
+		ldmia	r1!, {r3, r4}
+		stmia	r0!, {r3, r4}
+		mov	pc, lr
+#endif
+
 9:		rsb	ip, ip, #4
 		cmp	ip, #2
 		ldr1b	r1, r3, gt, abort=21f
@@ -654,7 +758,7 @@
 		subs	r2, r2, #28
 		blt	14f
 
-#ifndef DISABLE_WRITE_ALIGNMENT
+#ifndef DISABLE_WRITE_ALIGNMENT_FOR_UNALIGNED_CASE
 	CALGN(	ands	ip, r0, #(WRITE_ALIGN_BYTES - 1)	)
 	CALGN(	rsb	ip, ip, #WRITE_ALIGN_BYTES		)
 	CALGN(	sbcnes	r4, ip, r2		)  @ C is always set here
@@ -726,7 +830,7 @@
 		orr	r3, r3, lr, push #\push
 		str1w	r0, r3, abort=21f
 		bgt	15b
-#ifndef DISABLE_WRITE_ALIGNMENT
+#ifndef DISABLE_WRITE_ALIGNMENT_FOR_UNALIGNED_CASE
 	CALGN(	cmp	r2, #0			)
 	CALGN(	bge	11b			)
 #endif
