@@ -325,7 +325,7 @@
 		tsteq	r2, #15
 		stmia	r0!, {r3, r4, r5, r6}
 		/*
-		 * The equal is set if there are no bytes left.
+		 * The equal flag is set if there are no bytes left.
 		 * The carry flag is set is there are >= 8 bytes left.
 		 */
 		beq	43f
@@ -432,11 +432,16 @@
 		 * Unaligned case that has been aligned to a word
 		 * boundary (src & 3) == (dst & 3).
 		 */
-		subs	r2, r2, #28
+		/* Correct the count. */
+		adds	r2, r2, #4
 		stmfd	sp!, {r5 - r9}
+#if defined(COPY_FUNCTION_MEMCPY) && WRITE_ALIGN_BYTES == 64
+		cmp	r2, #WRITE_ALIGN_BYTES
+#else
+		cmp	r2, #32
+#endif
 		mov	r8, r3
-		/* Correct the count when jumping to the tail, */
-		addlt	r2, r2, #32
+		/* Jump to the tail if there are too few bytes. */
 		blt	5f
 #if defined(COPY_FUNCTION_MEMCPY) && (WRITE_ALIGN_BYTES >= 32 \
 || WRITE_ALIGN_BYTES == 0)
@@ -449,18 +454,24 @@
 		 * check for the main loop here.
 		 */
 #if WRITE_ALIGN_BYTES >= 32
-		/* WRITE_ALIGN_BYTES <= 32, so there are enough bytes. */
+		/* There are enough bytes due to the check above. */
 	CALGN(	ands	r3, r0, #(WRITE_ALIGN_BYTES - 1)	)
 	CALGN(	rsb	r3, r3, #WRITE_ALIGN_BYTES		)
 	CALGN(	blne	50f					)
 #endif
+		/*
+		 * If WRITE_ALIGN_BYTES == 0 and L1_CACHE_BYTES == 32,
+		 * we can skip the next check and jump to the main loop.
+		 */
+#if WRITE_ALIGN_BYTES != 0 || L1_CACHE_BYTES != 32
 		/* The main loop handles L1_CACHE_BYTES at a time. */
-		cmp	r2, #(L1_CACHE_BYTES - 32)
-		/* Correct the count when jumping to the tail, */
-		addlt	r2, r2, #32
+		cmp	r2, #L1_CACHE_BYTES
 		blt	5f
+#endif
+		subs	r2, r2, #32
 		b	2f
 #else
+		/* Jump to the regular alignment code. */
 		b	45f
 #endif
 
@@ -503,7 +514,7 @@
 1:		subs	r2, r2, #(28)
 		stmfd	sp!, {r5 - r9}
 	PLD(	mov	r8, r3			)
-		/* Correct the count when jumping to the tail, */
+		/* Correct the count when jumping to the tail. */
 		addlt	r2, r2, #32
 		blt	5f
 #endif
@@ -733,10 +744,11 @@
 		mov	pc, lr
 #endif
 
+		/* Unaligned destination. r3 is preload base address. */
 9:		rsb	ip, ip, #4
 		cmp	ip, #2
-		ldr1b	r1, r3, gt, abort=21f
-		str1b	r0, r3, gt, abort=21f
+		ldr1b	r1, r4, gt, abort=21f
+		str1b	r0, r4, gt, abort=21f
 		ldr1b	r1, r4, ge, abort=21f
 		str1b	r0, r4, ge, abort=21f
 		ldr1b	r1, lr, abort=21f
@@ -766,26 +778,29 @@
 	CALGN(	bcc	15f			)
 #endif
 		/*
-		 * We need the aligned base used for early preloads,
-		 * but because this is an entry point from multiple
-		 * code paths, we don't have the value available in
-		 * all cases and so cannot match up the early preloads
-		 * with the preloads in the main loop.
+		 * At this point the aligned base address used for early
+		 * preloads is stored in r3.
 		 */
 11:		stmfd	sp!, {r5 - r10}
 
 	PLD(	add	r10, r1, #(PREFETCH_DISTANCE * L1_CACHE_BYTES)	)
-	PLD(	bic	r3, r10, #(L1_CACHE_BYTES - 1)	)
 	PLD(	subs	r2, r2, #(PREFETCH_DISTANCE * 32)	)
-	PLD(	sub	r10, r3, r1		)
-	PLD(	blt	13f			)
-.if PREFETCH_DISTANCE >= 4
-	PLD(	pld	[r3, #(- 3 * L1_CACHE_BYTES)]	)
-.endif
-.if PREFETCH_DISTANCE >= 3
-	PLD(	pld	[r3, #(- 2 * L1_CACHE_BYTES)]	)
-.endif
+	PLD(	bic     r4, r10, #(L1_CACHE_BYTES - 1)			)
+	PLD(	add	r3, #(2 * L1_CACHE_BYTES)	)
+	PLD(	blt	13f				)
+	PLD(	cmp	r3, r4				)
+	PLD(	sub	r10, r4, r1			)
+		/*
+		 * "Catch-up" the early preloads (which have been performed up
+		 * to aligned base + 2 * L1_CACHE_BYTES) to the preload offset
+		 * used in the main loop.
+		 */
+	PLD(	bge	46f				)
+47:	PLD(	adds	r3, r3, #L1_CACHE_BYTES		)	/* Thumb16 */
+	PLD(	cmp	r3, r4				)
 	PLD(	pld	[r3, #(- L1_CACHE_BYTES)]	)
+	PLD(	blt	47b				)
+46:
 
 		/*
 		 * Note that when L1_CACHE_BYTES is 64, we are
@@ -824,11 +839,11 @@
 14:		ands	ip, r2, #28
 		beq	16f
 
-15:		mov	r3, lr, pull #\pull
+15:		mov	r4, lr, pull #\pull
 		ldr1w	r1, lr, abort=21f
 		subs	ip, ip, #4
-		orr	r3, r3, lr, push #\push
-		str1w	r0, r3, abort=21f
+		orr	r4, r4, lr, push #\push
+		str1w	r0, r4, abort=21f
 		bgt	15b
 #ifndef DISABLE_WRITE_ALIGNMENT_FOR_UNALIGNED_CASE
 	CALGN(	cmp	r2, #0			)
