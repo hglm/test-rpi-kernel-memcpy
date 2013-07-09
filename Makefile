@@ -3,17 +3,18 @@
 # For ARMV7, uncomment the two lines defining THUMB2_CFLAGS to enable
 # Thumb2 mode.
 
-PLATFORM_CFLAGS = -DARMV6
-#THUMB2_CFLAGS = -march=armv7-a -Wa,-march=armv7-a -mthumb -Wa,-mthumb -Wa,-mimplicit-it=always \
-#-mno-thumb-interwork -DCONFIG_THUMB2_KERNEL
+PLATFORM_CFLAGS = -DARMV7
+THUMB2_CFLAGS = -march=armv7-a -Wa,-march=armv7-a -mthumb -Wa,-mthumb -Wa,-mimplicit-it=always \
+-mno-thumb-interwork -DCONFIG_THUMB2_KERNEL -DCONFIG_THUMB
 CFLAGS = -std=gnu99 -Ofast -Wall $(PLATFORM_CFLAGS) $(THUMB2_CFLAGS)
 
 all : benchmark
 
 benchmark : benchmark.o copy_page.o copy_page_orig.o memcpy.o memcpy_orig.o memset.o memzero.o \
-memset_orig.o memzero_orig.o
+memset_orig.o memzero_orig.o new_arm.o
 	$(CC) $(CFLAGS) benchmark.o copy_page.o copy_page_orig.o \
-memcpy.o memcpy_orig.o memset.o memset_orig.o memzero.o memzero_orig.o -o benchmark -lm -lrt
+memcpy.o memcpy_orig.o memset.o memset_orig.o memzero.o memzero_orig.o new_arm.o \
+ -o benchmark -lm -lrt
 
 clean :
 	rm -f benchmark
@@ -44,6 +45,8 @@ memzero.o : memzero.S kernel_defines.h
 memset_orig.o : memset_orig.S kernel_defines.h
 
 memzero_orig.o : memzero_orig.S kernel_defines.h
+
+new_arm.o : new_arm.S new_arm.h
 
 .c.o : 
 	$(CC) -c $(CFLAGS) $< -o $@

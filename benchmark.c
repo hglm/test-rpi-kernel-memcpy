@@ -33,12 +33,13 @@
 #include <math.h>
 
 #include "asm.h"
+#include "new_arm.h"
 
 #define DEFAULT_TEST_DURATION 2.0
 #define RANDOM_BUFFER_SIZE 256
 
 #define NU_MEMCPY_VARIANTS 5
-#define NU_MEMSET_VARIANTS 5
+#define NU_MEMSET_VARIANTS 8
 
 typedef void *(*memcpy_func_type)(void *dest, const void *src, size_t n);
 typedef void *(*memset_func_type)(void *dest, int c, size_t n);
@@ -95,6 +96,9 @@ static const char *memset_variant_name[NU_MEMSET_VARIANTS] = {
     "kernel memset (optimized)",
     "kernel memzero (original)",
     "kernel memzero (optimized)",
+    "new libc memset (align = 0)",
+    "new libc memset (align = 8)",
+    "new libc memset (align = 32)",
 };
 
 static const memcpy_func_type memset_variant[NU_MEMSET_VARIANTS] = {
@@ -102,7 +106,10 @@ static const memcpy_func_type memset_variant[NU_MEMSET_VARIANTS] = {
     kernel_memset_orig,
     kernel_memset,
     memzero_orig_wrapper,
-    memzero_wrapper
+    memzero_wrapper,
+    memset_new_align_0,
+    memset_new_align_8,
+    memset_new_align_32
 };
 
 static double get_time() {

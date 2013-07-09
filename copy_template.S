@@ -784,8 +784,8 @@
 11:		stmfd	sp!, {r5 - r10}
 
 	PLD(	add	r10, r1, #(PREFETCH_DISTANCE * L1_CACHE_BYTES)	)
-	PLD(	subs	r2, r2, #(PREFETCH_DISTANCE * 32)	)
-	PLD(	bic     r4, r10, #(L1_CACHE_BYTES - 1)			)
+	PLD(	subs	r2, r2, #(PREFETCH_DISTANCE * L1_CACHE_BYTES)	)
+	PLD(	bic     r4, r10, #31					)
 	PLD(	add	r3, #(2 * L1_CACHE_BYTES)	)
 	PLD(	blt	13f				)
 	PLD(	cmp	r3, r4				)
@@ -831,7 +831,7 @@
 		orr	ip, ip, lr, push #\push
 		str8w	r0, r3, r4, r5, r6, r7, r8, r9, ip, , abort=19f
 		bge	12b
-	PLD(	cmn	r2, #(PREFETCH_DISTANCE * 32)	)
+	PLD(	cmn	r2, #(PREFETCH_DISTANCE * L1_CACHE_BYTES)	)
 	PLD(	bge	13b				)
 
 		ldmfd	sp!, {r5 - r10}
