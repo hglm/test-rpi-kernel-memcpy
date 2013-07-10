@@ -34,7 +34,7 @@
 #endif
 #if __LINUX_ARM_ARCH__ == 6
 #define CALGN_MEMSET(code...) code
-#define MEMSET_WRITE_ALIGN_BYTES 8
+#define MEMSET_WRITE_ALIGN_BYTES 32
 #else
 #define CALGN_MEMSET(code...)
 #endif
