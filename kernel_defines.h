@@ -21,10 +21,10 @@
 
 #define ENDPROC(proc) .endfunc
 
-#if __LINUX_ARM_ARCH__ >= 7
+#if __LINUX_ARM_ARCH__ == 6
 #define CALGN(code...) code
 #if __LINUX_ARM_ARCH__ == 6
-#define WRITE_ALIGN_BYTES 32
+#define WRITE_ALIGN_BYTES 8
 #else
 #define WRITE_ALIGN_BYTES 32
 #endif
@@ -39,8 +39,8 @@
 #define CALGN_MEMSET(code...)
 #endif
 
-#define pull            lsr
-#define push            lsl
+#define pullbits        lsr
+#define pushbits        lsl
 #ifdef CONFIG_THUMB2_KERNEL
 #define W(instr)        instr.w
 #define ARM(instr...)
