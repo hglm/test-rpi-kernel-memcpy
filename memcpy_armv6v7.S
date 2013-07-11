@@ -90,7 +90,7 @@
 /* Helper macro for the fast-path implementation. */
 
 .macro copy_16_bytes bytes_to_go, line_size, prefetch_distance
-#ifdef CONFIG_THUMB
+#ifdef CONFIG_THUMB2_KERNEL
                 /*
                  * When Thumb2 mode is enabled, the ldmia/stmia instructions
                  * will be 16-bit, and the preload instruction will be
