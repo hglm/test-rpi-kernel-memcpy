@@ -24,21 +24,40 @@
 	ldr\cond \reg, [\ptr], #4
 	.endm
 
+	/*
+	 * Using offset addressing instead of post-increment for a block
+	 * of load instructions has several advantages: the instructions
+	 * can be dual-issued, and the Thumb2 instructions are half the
+	 * size for registers in the range r0-r7.
+	 */
+	.macro ldr1woffset ptr reg offset abort
+	ldr \reg, [\ptr, #\offset]
+	.endm
+
         .macro ldr2w ptr reg1 reg2 abort
-        ldr1w \ptr, \reg1, \abort
-        ldr1w \ptr, \reg2, \abort
+	ldr1woffset \ptr, \reg1, 0, \abort
+	ldr1woffset \ptr, \reg2, 4, \abort
+	add	r1, r1, #8
 	.endm
 
         .macro ldr4w ptr reg1 reg2 reg3 reg4 abort
-        ldr1w \ptr, \reg1, \abort
-        ldr1w \ptr, \reg2, \abort
-        ldr1w \ptr, \reg3, \abort
-        ldr1w \ptr, \reg4, \abort
+	ldr1woffset \ptr, \reg1, 0, \abort
+	ldr1woffset \ptr, \reg2, 4, \abort
+	ldr1woffset \ptr, \reg3, 8, \abort
+	ldr1woffset \ptr, \reg4, 12, \abort
+	add	r1, r1, #16
         .endm
 
         .macro ldr8w ptr reg1 reg2 reg3 reg4 reg5 reg6 reg7 reg8 abort
-        ldr4w \ptr, \reg1, \reg2, \reg3, \reg4, \abort
-        ldr4w \ptr, \reg5, \reg6, \reg7, \reg8, \abort
+	ldr1woffset \ptr, \reg1, 0, \abort
+	ldr1woffset \ptr, \reg2, 4, \abort
+	ldr1woffset \ptr, \reg3, 8, \abort
+	ldr1woffset \ptr, \reg4, 12, \abort
+	ldr1woffset \ptr, \reg5, 16, \abort
+	ldr1woffset \ptr, \reg6, 20, \abort
+	ldr1woffset \ptr, \reg7, 24, \abort
+	ldr1woffset \ptr, \reg8, 28, \abort
+	add	r1, r1, #32
         .endm
 
 	.macro ldr1b ptr reg cond=al abort
@@ -77,13 +96,10 @@
 	.macro exit_no_regs
 	/* Return the original destination in r0. */
 	ldr r0, [sp], #4
-	mov pc, lr
+	bx lr
 	.endm
 
 	.text
-#ifndef CONFIG_KERNEL_THUMB2
-	.p2align 5
-#endif
 
 /* Prototype: void *copy_from_user(void *dest, const void *src, size_t n); */
 

@@ -138,19 +138,18 @@
  * cache may be slower when the threshold is set too high.
  */
 #define FAST_PATH_SIZE_THRESHOLD 128
-#define DISABLE_WRITE_ALIGNMENT
+/* #define DISABLE_WRITE_ALIGNMENT */
 #endif
 
 #define OPTIMIZE_WITH_FAST_PATH
-#define DISABLE_WRITE_ALIGNMENT_FOR_UNALIGNED_CASE
+/* #define DISABLE_WRITE_ALIGNMENT_FOR_UNALIGNED_CASE */
 
 #ifdef OPTIMIZE_WITH_FAST_PATH
 		/*
                  * For small aligned memcpy/copy_to_user/copy_from_user
-                 * operations, the current implementation has some
+                 * operations, the previous implementation has some
                  * overhead. By creating a fast path for common small
-                 * aligned requests, performance is increased. This
-		 * applies to both memcpy and copy_to/from_user.
+                 * aligned requests, performance is increased.
                  */
 		cmp	r2, #SMALL_SIZE_THRESHOLD
 		/* Calculate the aligned base for preloads. */
@@ -177,13 +176,13 @@
 32:
 #ifdef COPY_FUNCTION_FROM_USER
 		ldr1w	r1, r3, abort=22f
-		sub	r2, r2, #8
+		subs	r2, r2, #8		/* Thumb16 */
 		ldr1w	r1, ip, abort=22f
 		cmp	r2, #8
 		str2w	r0, r3, ip, abort=22f
 #else	/* COPY_FUNCTION_TO_USER */
 		ldr2w	r1, r3, ip, abort=22f
-		sub	r2, r2, #8
+		subs	r2, r2, #8		/* Thumb16 */
 		str1w	r0, r3, abort=22f
 		cmp	r2, #8
 		str1w	r0, ip, abort=22f
@@ -308,13 +307,23 @@
 	CALGN(	ands	ip, r0, #(WRITE_ALIGN_BYTES - 1)	)
 	CALGN(	rsb	r3, ip, #WRITE_ALIGN_BYTES		)
 	CALGN(	sbcnes	r4, r3, r2		)  @ C is always set here
+#if WRITE_ALIGN_BYTES == 8
+		/*
+		 * For write alignment of 8, it is quickest to simply
+		 * use a conditional load/store.
+		 */
+	CALGN(	ldr1wcond r1, r4, cc		)
+	CALGN(	subcc	r2, r2, r3		)
+	CALGN(	str1wcond r0, r4, cc		)
+#else
 	CALGN(	bcs	2f			)
 	CALGN(	adr	r4, 6f			)
-.if WRITE_ALIGN_BYTES == 16
+#if WRITE_ALIGN_BYTES == 16
 	CALGN(  add	ip, ip, #16		)
-.endif
+#endif
 	CALGN(	subs	r2, r2, r3		)  @ C gets set
 	CALGN(	add	pc, r4, ip		)
+#endif
 #endif
 
 2:
@@ -350,7 +359,7 @@
 	PLD(	blt	42b				)
 41:
 
-.if L1_CACHE_BYTES == 32
+#if L1_CACHE_BYTES == 32
 3:	PLD(	pld	[r1, r9]		)
 4:		ldr8w	r1, r3, r4, r5, r6, r7, r8, ip, lr, abort=20f
 		subs	r2, r2, #32
@@ -362,7 +371,7 @@
 		/* Correct the count. */
 	PLD(	adds	r2, r2, #(PREFETCH_DISTANCE * L1_CACHE_BYTES + 32)	)
 	NO_PLD(	add	r2, r2, #32						)
-.else /* L1_CACHE_BYTES == 64 */
+#else /* L1_CACHE_BYTES == 64 */
 3:	PLD(	pld	[r1, r9]		)
 4:		ldr8w	r1, r3, r4, r5, r6, r7, r8, ip, lr, abort=20f
 		subs	r2, r2, #64
@@ -375,22 +384,28 @@
 		/* Correct the count. */
 	PLD(	adds	r2, r2, #(PREFETCH_DISTANCE * L1_CACHE_BYTES + 64)	)
 	NO_PLD( add	r2, r2, #64						)
-.endif
+#endif
 30:
 5:
-.if L1_CACHE_BYTES == 64
+#if L1_CACHE_BYTES == 64
 		tst     r2, #32
 		beq	31f
 		ldr8w	r1, r3, r4, r5, r6, r7, r8, ip, lr, abort=20f
 		str8w	r0, r3, r4, r5, r6, r7, r8, ip, lr, abort=20f
 31:
-.endif
+#endif
 		ands	ip, r2, #28
 		rsb	ip, ip, #32
+		/*
+		 * At this point carry is expected to be clear. However,
+		 * because we corrected the count, the ands instruction
+		 * resulted in carry set. Explicitly clear carry here.
+		 */
+		cmpne	r2, #128
 #if LDR1W_SHIFT > 0
 		lsl	ip, ip, #LDR1W_SHIFT
 #endif
-		addne	pc, pc, ip		@ C is always clear here
+		addne	pc, pc, ip
 		b	7f
 6:
 		.rept	(1 << LDR1W_SHIFT)
@@ -470,7 +485,18 @@
 	CALGN(	rsb	ip, ip, #WRITE_ALIGN_BYTES		)
 	CALGN(	sbcnes	r4, ip, r2		)  @ C is always set here
 	CALGN(	subcc	r2, r2, ip		)
+#if WRITE_ALIGN_BYTES == 8
+		/*
+		 * For write alignment of 8, it is quickest to simply
+		 * use conditional instructions.
+		 */
+	CALGN(	movcc	r4, lr, pullbits #\pullshift		)
+	CALGN(	ldr1wcond r1, lr, cc, abort=21f			)
+	CALGN(	orrcc	r4, r4, lr, pushbits #\pushshift	)
+	CALGN(	str1wcond r0, r4, cc, abort=21f			)
+#else
 	CALGN(	bcc	15f			)
+#endif
 #endif
 		/*
 		 * At this point the aligned base address used for early
@@ -507,16 +533,15 @@
 12:	PLD(	pld	[r1, r10]		)
 13:		ldr4w	r1, r4, r5, r6, r7, abort=19f
 		mov	r3, lr, pullbits #\pullshift
-		subs	r2, r2, #32
 		ldr4w	r1, r8, r9, ip, lr, abort=19f
 		orr	r3, r3, r4, pushbits #\pushshift
-		mov	r4, r4, pullbits #\pullshift
+		movs	r4, r4, pullbits #\pullshift		/* Thumb16 */
 		orr	r4, r4, r5, pushbits #\pushshift
-		mov	r5, r5, pullbits #\pullshift
+		movs	r5, r5, pullbits #\pullshift		/* Thumb16 */
 		orr	r5, r5, r6, pushbits #\pushshift
-		mov	r6, r6, pullbits #\pullshift
+		movs	r6, r6, pullbits #\pullshift		/* Thumb16 */
 		orr	r6, r6, r7, pushbits #\pushshift
-		mov	r7, r7, pullbits #\pullshift
+		movs	r7, r7, pullbits #\pullshift		/* Thumb16 */
 		orr	r7, r7, r8, pushbits #\pushshift
 		mov	r8, r8, pullbits #\pullshift
 		orr	r8, r8, r9, pushbits #\pushshift
@@ -524,6 +549,7 @@
 		orr	r9, r9, ip, pushbits #\pushshift
 		mov	ip, ip, pullbits #\pullshift
 		orr	ip, ip, lr, pushbits #\pushshift
+		subs	r2, r2, #32
 		str8w	r0, r3, r4, r5, r6, r7, r8, r9, ip, , abort=19f
 		bge	12b
 	PLD(	cmn	r2, #(PREFETCH_DISTANCE * L1_CACHE_BYTES)	)

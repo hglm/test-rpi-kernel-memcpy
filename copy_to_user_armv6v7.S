@@ -83,13 +83,10 @@
 	.macro exit_no_regs
 	/* Return the original destination in r0. */
 	ldr r0, [sp], #4
-	mov pc, lr
+	bx lr
 	.endm
 
 	.text
-#ifndef CONFIG_KERNEL_THUMB2
-	.p2align 5
-#endif
 
 /* Prototype: void *copy_to_user(void *dest, const void *src, size_t n); */
 
