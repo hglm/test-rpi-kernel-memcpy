@@ -38,7 +38,7 @@
 #define DEFAULT_TEST_DURATION 2.0
 #define RANDOM_BUFFER_SIZE 256
 
-#define NU_MEMCPY_VARIANTS 5
+#define NU_MEMCPY_VARIANTS 7
 #define NU_MEMSET_VARIANTS 8
 
 typedef void *(*memcpy_func_type)(void *dest, const void *src, size_t n);
@@ -68,6 +68,8 @@ static const char *memcpy_variant_name[NU_MEMCPY_VARIANTS] = {
     "libc memcpy",
     "kernel memcpy (original)",
     "kernel memcpy (optimized)",
+    "kernel copy_from_user (optimized)",
+    "kernel copy_to_user (optimized)",
     "kernel copy_page (original)",
     "kernel copy_page (optimized)",
 };
@@ -75,7 +77,9 @@ static const char *memcpy_variant_name[NU_MEMCPY_VARIANTS] = {
 static const memcpy_func_type memcpy_variant[NU_MEMCPY_VARIANTS] = {
     memcpy,
     kernel_memcpy_orig,
-    kernel_memcpy,
+    kernel_memcpy_armv6v7,
+    kernel_copy_from_user_armv6v7,
+    kernel_copy_to_user_armv6v7,
     copy_page_orig_wrapper,
     copy_page_wrapper
 };

@@ -14,9 +14,7 @@
 
 #define LDR1W_SHIFT	0
 #define STR1W_SHIFT	0
-#define COPY_FUNCTION_MEMCPY
-// #define COPY_FUNCTION_FROM_USER
-// #define COPY_FUNCTION_TO_USER
+#define COPY_FUNCTION_TO_USER
 
 	.macro ldr1w ptr reg abort
 	W(ldr) \reg, [\ptr], #4
@@ -26,40 +24,17 @@
 	ldr\cond \reg, [\ptr], #4
 	.endm
 
-#ifdef COPY_FUNCTION_FROM_USER
-        .macro ldr2w ptr reg1 reg2 abort
-        ldr1w \ptr, \reg1, \abort
-        ldr1w \ptr, \reg2, \abort
-	.endm
-#else
         .macro ldr2w ptr reg1 reg2 abort
 	ldmia \ptr!, {\reg1, \reg2}
 	.endm
-#endif
 
-#ifdef COPY_FUNCTION_FROM_USER
-        .macro ldr4w ptr reg1 reg2 reg3 reg4 abort
-        ldr1w \ptr, \reg1, \abort
-        ldr1w \ptr, \reg2, \abort
-        ldr1w \ptr, \reg3, \abort
-        ldr1w \ptr, \reg4, \abort
-        .endm
-#else
 	.macro ldr4w ptr reg1 reg2 reg3 reg4 abort
 	ldmia \ptr!, {\reg1, \reg2, \reg3, \reg4}
 	.endm
-#endif
 
-#ifdef COPY_FUNCTION_FROM_USER
-        .macro ldr8w ptr reg1 reg2 reg3 reg4 reg5 reg6 reg7 reg8 abort
-        ldr4w \ptr, \reg1, \reg2, \reg3, \reg4, \abort
-        ldr4w \ptr, \reg5, \reg6, \reg7, \reg8, \abort
-        .endm
-#else
 	.macro ldr8w ptr reg1 reg2 reg3 reg4 reg5 reg6 reg7 reg8 abort
 	ldmia \ptr!, {\reg1, \reg2, \reg3, \reg4, \reg5, \reg6, \reg7, \reg8}
 	.endm
-#endif
 
 	.macro ldr1b ptr reg cond=al abort
 	ldr\cond\()b \reg, [\ptr], #1
@@ -73,31 +48,18 @@
 	str\cond \reg, [\ptr], #4
 	.endm
 
-#ifdef COPY_FUNCTION_TO_USER
         .macro str2w ptr reg1 reg2 abort
         str1w \ptr, \reg1, \abort
         str1w \ptr, \reg2, \abort
         .endm
-#else
-	.macro str2w ptr reg1 reg2 abort
-	stmia \ptr!, {\reg1, \reg2}
-	.endm
-#endif
 
-#ifdef COPY_FUNCTION_TO_USER
         .macro str4w ptr reg1 reg2 reg3 reg4 abort
         str1w \ptr, \reg1, \abort
         str1w \ptr, \reg2, \abort
         str1w \ptr, \reg3, \abort
         str1w \ptr, \reg4, \abort
         .endm
-#else
-	.macro str4w ptr reg1 reg2 reg3 reg4 abort
-	stmia \ptr!, {\reg1, \reg2, \reg3, \reg4}
-	.endm
-#endif
 
-#ifdef COPY_FUNCTION_TO_USER
         .macro str8w ptr reg1 reg2 reg3 reg4 reg5 reg6 reg7 reg8 abort
         str1w \ptr, \reg1, \abort
         str1w \ptr, \reg2, \abort
@@ -108,11 +70,6 @@
         str1w \ptr, \reg7, \abort
         str1w \ptr, \reg8, \abort
         .endm
-#else
-	.macro str8w ptr reg1 reg2 reg3 reg4 reg5 reg6 reg7 reg8 abort
-	stmia \ptr!, {\reg1, \reg2, \reg3, \reg4, \reg5, \reg6, \reg7, \reg8}
-	.endm
-#endif
 
 	.macro str1b ptr reg cond=al abort
 	str\cond\()b \reg, [\ptr], #1
@@ -134,10 +91,10 @@
 	.p2align 5
 #endif
 
-/* Prototype: void *memcpy(void *dest, const void *src, size_t n); */
+/* Prototype: void *copy_to_user(void *dest, const void *src, size_t n); */
 
-ENTRY(kernel_memcpy)
+ENTRY(kernel_copy_to_user_armv6v7)
 
-#include "copy_template.S"
+#include "copy_user_template_armv6v7.S"
 
-ENDPROC(kernel_memcpy)
+ENDPROC(kernel_copy_to_user_armv6v7)

@@ -96,14 +96,6 @@
  *      instead of nothing. When enabled, WRITE_ALIGN_BYTES defines the number
  *      of bytes to align to (it must be 16 or 32).
  *
- * COPY_FUNCTION_MEMCPY
- *
- *      When COPY_FUNCTION_MEMCPY is defined, there no need to use single word
- *      loads and stores in the alignment and tail parts for the word aligned
- *      case. This results in a measurable speed-up for modern ARM platforms.
- *      Additionally, write alignment is disabled when COPY_FUNCTION_MEMCPY
- *      is not defined.
- *
  * COPY_FUNCTION_FROM_USER
  *
  *      This is defined when compiling the copy_from_user function. The write
@@ -120,18 +112,6 @@
  *
  */
 
-#ifdef COPY_FUNCTION_MEMCPY
-/* The small size threshold must be >= 15 for COPY_FUNCTION_MEMCPY. */
-#define SMALL_SIZE_THRESHOLD 15
-/*
- * For regular memcpy, we have a fast path handling up to 256 bytes for
- * word aligned requests. Because the fast path doesn't do write aligning,
- * on platforms that appreciate write aligning setting the threshold to a
- * lower value than 256 bytes might have a benefit. The treshold must be
- * greater or equal to 32 for regular memcpy.
- */
-#define FAST_PATH_SIZE_THRESHOLD 256
-#endif
 #ifdef COPY_FUNCTION_FROM_USER
 #define SMALL_SIZE_THRESHOLD 7
 /*
@@ -141,6 +121,7 @@
 #define FAST_PATH_SIZE_THRESHOLD 95
 #define DISABLE_WRITE_ALIGNMENT
 #endif
+
 #ifdef COPY_FUNCTION_TO_USER
 #define SMALL_SIZE_THRESHOLD 7
 /*
@@ -151,9 +132,11 @@
  * avoid the non-fast path code completely.
  *
  * Otherwise, it seems the fast path is faster or almost as fast even
- * for larger sizes.
+ * for larger sizes. However, because preload instructions are omitted
+ * from the fast path, transfers from kernel memory that is not in the CPU
+ * cache may be slower when the threshold is set too high.
  */
-#define FAST_PATH_SIZE_THRESHOLD 95
+#define FAST_PATH_SIZE_THRESHOLD 128
 #define DISABLE_WRITE_ALIGNMENT
 #endif
 
@@ -184,167 +167,6 @@
 		 * (<= FAST_PATH_SIZE_THRESHOLD bytes) word-aligned request
 		 * of size greater than SMALL_SIZE_THRESHOLD.
 		 */
-#ifdef COPY_FUNCTION_MEMCPY
-		/* In the case of regular memcpy, SMALL_SIZE_THRESHOLD >= 15
-		 * which means that the number of bytes >= 16 when we get here.
-		 */
-/* The optimal value for EARLY_PREFETCHES was determined emperically. */
-#if L1_CACHE_BYTES == 32
-#define EARLY_PREFETCHES (PREFETCH_DISTANCE + 1)
-#else	/* L1_CACHE_BYTES == 64 */
-#if PREFETCH_DISTANCE <= 2
-#define EARLY_PREFETCHES 2
-#else
-#define EARLY_PREFETCHES (PREFETCH_DISTANCE - 1)
-#endif
-#endif
-		.macro copy_16_bytes bytes_to_go
-#ifdef CONFIG_THUMB2_KERNEL
-		/*
-		 * When Thumb2 mode is enabled, the ldmia/stmia instructions
-		 * will be 16 bits, and the preload instruction will be
-		 * 32 bits, so we only need one 32-bit wide nop instruction
-		 * when there's no preload, for a total size of two words.
-		 */
-		.if \bytes_to_go >= (EARLY_PREFETCHES * L1_CACHE_BYTES) && \
-		(\bytes_to_go % L1_CACHE_BYTES) == 0
-	PLD(	pld     [r1, ip]	)
-	NO_PLD(	W(nop)	)
-		ldmia	r1!, {r3, r4, r5, r6}
-		stmia	r0!, {r3, r4, r5, r6}
-		.else
-		ldmia	r1!, {r3, r4, r5, r6}
-		W(nop)
-		stmia	r0!, {r3, r4, r5, r6}
-		.endif
-#else
-		/*
-		 * When ARM mode is enabled, every instruction is one word,
-		 * so make sure the entire block is four instructions.
-		 */
-		.if \bytes_to_go >= (EARLY_PREFETCHES * L1_CACHE_BYTES) && \
-		(\bytes_to_go % L1_CACHE_BYTES) == 0
-	PLD(	pld     [r1, ip]	)
-	NO_PLD(	nop	)
-		.else
-		nop
-		.endif
-		ldmia	r1!, {r3, r4, r5, r6}
-		nop
-		stmia	r0!, {r3, r4, r5, r6}
-#endif
-.endm
-
-	PLD(	pld	[ip, #L1_CACHE_BYTES] )
-		stmdb	sp!, {r4, r5, r6}
-		bic	r3, r2, #15
-		/*
-                 * Use a heuristic to determine whether the preload
-		 * at aligned_base + 2 * L1_CACHE_BYTES will be useful.
-		 */
-#if EARLY_PREFETCHES >= 3
-	PLD(	cmp	r2, #(2 * L1_CACHE_BYTES - L1_CACHE_BYTES / 2)	)
-#endif
-	PLD(	add	r5, ip, #(EARLY_PREFETCHES * L1_CACHE_BYTES) )
-#if EARLY_PREFETCHES >= 3
-	PLD(	blt	40f			)
-#endif
-#if EARLY_PREFETCHES == 3
-	PLD(	pld	[ip, #(2 * L1_CACHE_BYTES)] )
-#endif
-#if EARLY_PREFETCHES == 4
-	PLD(	cmp	r2, #(3 * L1_CACHE_BYTES - L1_CACHE_BYTES / 2)	)
-	PLD(	pld	[ip, #(2 * L1_CACHE_BYTES)] )
-	PLD(	blt	40f			)
-	PLD(	pld	[ip, #(3 * L1_CACHE_BYTES)] )
-#endif
-#if EARLY_PREFETCHES == 5
-	PLD(	cmp	r2, #(3 * L1_CACHE_BYTES - L1_CACHE_BYTES / 2)	)
-	PLD(	pld	[ip, #(2 * L1_CACHE_BYTES)] )
-	PLD(	blt	40f			)
-	PLD(	cmp	r2, #(4 * L1_CACHE_BYTES - L1_CACHE_BYTES / 2)	)
-	PLD(	pld	[ip, #(3 * L1_CACHE_BYTES)] )
-	PLD(	blt	40f			)
-	PLD(	pld	[ip, #(4 * L1_CACHE_BYTES)] )
-#endif
-40:		/*
-		 * Set r5 so that the next preload will occur
-		 * exactly at aligned_base + EARLY_PREFETCHES * 
-		 * L1_CACHE_BYTES. For example, if L1_CACHE_BYTES is 64
-		 * and the number of bytes is 240, the next preload
-		 * will occur after processing 48 bytes, which is derived
-		 * from the formula r3 & (L1_CACHE_BYTES - 1),
-		 * where r3 is equal to number_of_bytes & (~15).
-		 */
-		rsb	r4, r3, #256
-	PLD(	subs	r5, r5, r1			)
-	PLD(	and	ip, r3, #(L1_CACHE_BYTES - 1)	)
-		subs	r2, r2, r3	/* Thumb16 */
-	THUMB(	lsrs	r4, r4, #1	/* Thumb16 */	)
-	PLD(	sub	ip, r5, ip			)
-		add	pc, pc, r4
-		nop
-		/* >= 256 bytes to go. */
-		copy_16_bytes 256
-		/* >= 240 bytes go. */
-		copy_16_bytes 240
-		/* >= 224 bytes to go. */
-		copy_16_bytes 224
-		/* >= 204 bytes go. */
-		copy_16_bytes 204
-		/* >= 192 bytes to go. */
-		copy_16_bytes 192
-		/* >= 176 bytes go. */
-		copy_16_bytes 176
-		/* >= 160 bytes to go. */
-		copy_16_bytes 160
-		/* >= 144 bytes go. */
-		copy_16_bytes 144
-		/* >= 128 bytes to go. */
-		copy_16_bytes 128
-		/* >= 112 bytes go. */
-		copy_16_bytes 112
-		/* >= 96 bytes to go. */
-		copy_16_bytes 96
-		/* >= 80 bytes to go. */
-		copy_16_bytes 80
-		/* >= 64 bytes to go. */
-		copy_16_bytes 64
-		/* >= 48 bytes to go. */
-		copy_16_bytes 48
-		/* >= 32 bytes to go. */
-		copy_16_bytes 32
-		/* At this point there are 16 to 31 bytes to go. */
-		tst	r2, #15
-		ldmia	r1!, {r3, r4, r5, r6}
-		cmpne	r2, #8
-		/*
-		 * If r2 == 8, we need to clear the eq flag while
-		 * making sure carry remains set.
-		 */
-		tsteq	r2, #15
-		stmia	r0!, {r3, r4, r5, r6}
-		/*
-		 * The equal flag is set if there are no bytes left.
-		 * The carry flag is set is there are >= 8 bytes left.
-		 */
-		beq	43f
-		ldrcs	ip, [r1], #4
-		ldrcs	r3, [r1], #4
-		strcs	ip, [r0], #4
-		strcs	r3, [r0], #4
-		tst	r2, #4
-		ldmfd	sp!, {r4, r5, r6}
-		ldrne	ip, [r1], #4
-		strne	ip, [r0], #4
-		tst	r2, #3
-		ldmeqfd	sp!, {r0}
-		moveq	pc, lr
-		b	38f
-43:		ldmfd	sp!, {r4, r5, r6}
-		ldmfd	sp!, {r0}
-		mov	pc, lr
-#else
 		/*
                  * For copy_to_user and copy_from_user, the fast path
 		 * uses single word loads and stores, but due to the
@@ -369,7 +191,6 @@
 		tst	r2, #4
 		ldr1wcond r1, r3, ne, abort=22f
 		str1wcond r0, r3, ne, abort=22f
-#endif
 34:		tst	r2, #3
 		bne	38f
 		exit_no_regs
@@ -392,12 +213,7 @@
 		ldr1wcond r1, r3, ne, abort=22f
 		str1wcond r0, r3, ne, abort=22f
 		tst	r2, #3
-#ifdef COPY_FUNCTION_MEMCPY
-		ldmeqfd	sp!, {r0}
-		moveq	pc, lr
-#else
 		beq	39f
-#endif
 #else
 		cmp	r2, #4
 		blt	38f
@@ -435,46 +251,13 @@
 		/* Correct the count. */
 		adds	r2, r2, #4
 		stmfd	sp!, {r5 - r9}
-#if defined(COPY_FUNCTION_MEMCPY) && WRITE_ALIGN_BYTES == 64
-		cmp	r2, #WRITE_ALIGN_BYTES
-#else
 		cmp	r2, #32
-#endif
 		mov	r8, r3
 		/* Jump to the tail if there are too few bytes. */
 		blt	5f
-#if defined(COPY_FUNCTION_MEMCPY) && (WRITE_ALIGN_BYTES >= 32 \
-|| WRITE_ALIGN_BYTES == 0)
-		/*
-		 * When the fast path is enabled and WRITE_ALIGN_BYTES >= 32,
-		 * the main code path assumes there are enough bytes for
-		 * alignment plus one iteration of the main loop (L1_CACHE_BYTES),
-		 * so alignment and size check are handled here.
-		 * Additionally, when WRITE_ALIGN_BYTES == 0, perform the size
-		 * check for the main loop here.
-		 */
-#if WRITE_ALIGN_BYTES >= 32
-		/* There are enough bytes due to the check above. */
-	CALGN(	ands	r3, r0, #(WRITE_ALIGN_BYTES - 1)	)
-	CALGN(	rsb	r3, r3, #WRITE_ALIGN_BYTES		)
-	CALGN(	blne	50f					)
-#endif
-		/*
-		 * If WRITE_ALIGN_BYTES == 0 and L1_CACHE_BYTES == 32,
-		 * we can skip the next check and jump to the main loop.
-		 */
-#if WRITE_ALIGN_BYTES != 0 || L1_CACHE_BYTES != 32
-		/* The main loop handles L1_CACHE_BYTES at a time. */
-		cmp	r2, #L1_CACHE_BYTES
-		blt	5f
-#endif
 		subs	r2, r2, #32
-		b	2f
-#else
 		/* Jump to the regular alignment code. */
-		subs	r2, r2, #32
 		b	45f
-#endif
 
 35:		adds	r2, r2, #3	/* Thumb16 */
 
@@ -521,31 +304,6 @@
 #endif
 
 #ifndef DISABLE_WRITE_ALIGNMENT
-#ifdef COPY_FUNCTION_MEMCPY
-#if WRITE_ALIGN_BYTES >= 32 && defined(OPTIMIZE_WITH_FAST_PATH)
-	CALGN(	ands	r3, r0, #(WRITE_ALIGN_BYTES - 1)	)
-	CALGN(	rsb	r3, r3, #WRITE_ALIGN_BYTES		)
-	CALGN(	blne	50f					)
-#else
-	CALGN(	ands	ip, r0, #(WRITE_ALIGN_BYTES - 1)	)
-	CALGN(	rsb	r3, ip, #WRITE_ALIGN_BYTES		)
-	CALGN(	sbcnes	r4, r3, r2		)  @ C is always set here
-	CALGN(	bcs	2f			)
-	/* For regular memcpy, use conditional multiloads/stores. */
-	CALGN(	tst	r3, #4			)
-	CALGN(	ldrne	r4, [r1], #4		)
-	CALGN(	strne	r4, [r0], #4		)
-	CALGN(	tst	r3, #8			)
-	CALGN(  ldmneia r1!, {r4-r5}		)
-	CALGN(	stmneia r0!, {r4-r5}		)
-	CALGN(	subs	r2, r2, r3		)	/* Thumb16 */
-#if WRITE_ALIGN_BYTES == 32
-	CALGN(	tst	r3, #16			)
-	CALGN(  ldmneia r1!, {r4-r7}		)
-	CALGN(	stmneia r0!, {r4-r7}		)
-#endif
-#endif
-#else
 	CALGN(	ands	ip, r0, #(WRITE_ALIGN_BYTES - 1)	)
 	CALGN(	rsb	r3, ip, #WRITE_ALIGN_BYTES		)
 	CALGN(	sbcnes	r4, r3, r2		)  @ C is always set here
@@ -557,21 +315,14 @@
 	CALGN(	subs	r2, r2, r3		)  @ C gets set
 	CALGN(	add	pc, r4, ip		)
 #endif
-#endif
 
 2:
 #if L1_CACHE_BYTES == 64
-#if defined(COPY_FUNCTION_MEMCPY) && defined(OPTIMIZE_WITH_FAST_PATH) \
-&& (WRITE_ALIGN_BYTES == 0 || WRITE_ALIGN_BYTES >= 32)
-		/* No check necessary. */
-		subs	r2, r2, #32
-#else
 		cmp	r2, #32
 		/* Correct the count when jumping to the tail, */
 		addlt	r2, r2, #32
 		blt     30f
 		subs	r2, r2, #32
-#endif
 #endif
 		/*
                  * Assume a preload at aligned base + 2 * L1_CACHE_BYTES will
@@ -626,29 +377,6 @@
 .endif
 30:
 5:
-#ifdef COPY_FUNCTION_MEMCPY
-		ands	r3, r2, #60
-		blne	50f
-#if 0
-		/*
-		 * For regular memcpy, use conditional multiloads/stores
-		 * for the tail.
-		 */
-		tst     r2, #32
-		beq	31f
-		ldmneia	r1!, {r3, r4, r5, r6, r7, r8, ip, lr}
-		stmneia	r0!, {r3, r4, r5, r6, r7, r8, ip, lr}
-31:		tst     r2, #16
-		ldmneia r1!, {r4-r7}
-		stmneia r0!, {r4-r7}
-		tst     r2, #8
-		ldmneia r1!, {r4-r5}
-		stmneia r0!, {r4-r5}
-		tst     r2, #4
-		ldrne   r4, [r1], #4
-		strne   r4, [r0], #4
-#endif
-#else
 .if L1_CACHE_BYTES == 64
 		tst     r2, #32
 		beq	31f
@@ -696,7 +424,6 @@
 #ifndef DISABLE_WRITE_ALIGNMENT
 	CALGN(	bcs	2b	)
 #endif
-#endif	/* defined(COPY_FUNCTION_MEMCPY) */
 
 7:		ldmfd	sp!, {r5 - r9}
 
@@ -710,40 +437,6 @@
 
 		ldmfd	sp!, {r4, lr}
 		exit_no_regs
-
-#ifdef COPY_FUNCTION_MEMCPY
-		/*
-		 * Subroutine that copies a multiple of 4 bytes of size
-		 * r3 from 0 to 64 bytes. r2 is decremented by the number
-		 * of bytes copied.
-		 */
-50:		tst     r3, #4
-		sub	r2, r2, r3
-		ldrne   r4, [r1], #4
-		subne	r3, r3, #4
-		strne   r4, [r0], #4
-		rsb	r3, r3, #64
-	THUMB(	lsrs	r3, r3, #1	)
-		add	pc, pc, r3
-		nop
-		ldmia	r1!, {r3, r4}
-		stmia	r0!, {r3, r4}
-		ldmia	r1!, {r3, r4}
-		stmia	r0!, {r3, r4}
-		ldmia	r1!, {r3, r4}
-		stmia	r0!, {r3, r4}
-		ldmia	r1!, {r3, r4}
-		stmia	r0!, {r3, r4}
-		ldmia	r1!, {r3, r4}
-		stmia	r0!, {r3, r4}
-		ldmia	r1!, {r3, r4}
-		stmia	r0!, {r3, r4}
-		ldmia	r1!, {r3, r4}
-		stmia	r0!, {r3, r4}
-		ldmia	r1!, {r3, r4}
-		stmia	r0!, {r3, r4}
-		mov	pc, lr
-#endif
 
 		/* Unaligned destination. r3 is preload base address. */
 9:		rsb	ip, ip, #4
