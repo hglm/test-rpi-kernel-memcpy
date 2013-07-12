@@ -32,11 +32,12 @@
 #define CALGN(code...)
 #define WRITE_ALIGN_BYTES 0
 #endif
-#if __LINUX_ARM_ARCH__ == 6
+#if __LINUX_ARM_ARCH__ >= 6
 #define CALGN_MEMSET(code...) code
-#define MEMSET_WRITE_ALIGN_BYTES 32
+#define MEMSET_WRITE_ALIGN_BYTES 8
 #else
 #define CALGN_MEMSET(code...)
+#define MEMSET_WRITE_ALIGN_BYTES 0
 #endif
 
 #define pullbits        lsr

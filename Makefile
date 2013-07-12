@@ -5,7 +5,7 @@
 
 PLATFORM_CFLAGS = -DARMV6
 #THUMB2_CFLAGS = -march=armv7-a -Wa,-march=armv7-a -mthumb -Wa,-mthumb -Wa,-mimplicit-it=always \
-#-mno-thumb-interwork -DCONFIG_THUMB2_KERNEL -DCONFIG_THUMB
+#-mthumb-interwork -DCONFIG_THUMB2_KERNEL -DCONFIG_THUMB
 CFLAGS = -std=gnu99 -Ofast -Wall $(PLATFORM_CFLAGS) $(THUMB2_CFLAGS)
 
 all : benchmark

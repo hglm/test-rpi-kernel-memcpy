@@ -16,104 +16,75 @@
 #include "kernel_defines.h"
 
 	.text
+	.syntax unified
 #ifndef CONFIG_THUMB2_KERNEL
 	.p2align 5
 #endif
 
 ENTRY(kernel_memset)
-	ands	r3, r0, #3		@ 1 unaligned?
-	mov	ip, r0			@ preserve ip as return value
-	bne	6f			@ 1
+	ands	r3, r0, #3
+	mov	ip, r0
+	bne	8f
+
 /*
  * we know that the pointer in r0 is aligned to a word boundary.
  */
 1:	orr	r1, r1, r1, lsl #8
 	cmp	r2, #8
 	orr	r1, r1, r1, lsl #16
+	blt	5f
 	mov	r3, r1
+
+	cmp	r2, #64
+	push 	{r4}
 	blt	4f
-
-#if ! CALGN_MEMSET(1)+0
-
-/*
- * We need 2 extra registers for this loop - use r4 and r5
- */
-	cmp	r2, #64
-	stmfd	sp!, {r4}
-	blt	7f
-	stmfd	sp!, {r5}
-	mov	r4, r1
-	mov	r5, r1
-
-2:	stmia	r0!, {r1, r3, r4, r5}	@ 64 bytes at a time.
-	subs	r2, r2, #64
-	stmia	r0!, {r1, r3, r4, r5}
-	cmp	r2, #64
-	stmia	r0!, {r1, r3, r4, r5}
-	stmia	r0!, {r1, r3, r4, r5}
-	bge	2b
-
-#else
-
-/*
- * This version aligns the destination pointer in order to write
- * whole cache lines at once.
- *
- * However, at least some architectures don't like writing 32 bytes
- * at a time. Since it's unlikely that it will hurt performance,
- * write 16 bytes at a time, eliminating save/restore of extra
- * registers on the stack.
- */
-
-	cmp	r2, #64
-	stmfd	sp!, {r4}
-	blt	7f
-	stmfd	sp!, {r5}
-	mov	r4, r1
-	mov	r5, r1
-
-.if MEMSET_WRITE_ALIGN_BYTES == 8
-	tst	r0, #4
-	beq	3f
-
-	cmp	r2, #68
-	str	r1, [r0], #4
-        sub	r2, r2, #4
-	blt     9f
-.else	/* MEMSET_WRITE_ALIGN_BYTES == 32 */
-	tst	r0, #31
-	beq	3f
-	tst     r0, #4
+#if MEMSET_WRITE_ALIGN_BYTES > 0
+	ands	r4, r0, #(MEMSET_WRITE_ALIGN_BYTES - 1)
+	/* Let r4 be equal to the number of bytes align.  */
+	rsb	r4, r4, #MEMSET_WRITE_ALIGN_BYTES
+	/*
+	 * At this point r4 contains the number of bytes to align
+	 * if eq is not set. The eq flag is set if there are no bytes
+	 * to align.
+	 */
+#if MEMSET_WRITE_ALIGN_BYTES == 8
+	subne	r2, r2, r4
 	strne	r1, [r0], #4
-        subne	r2, r2, #4
-	tst     r0, #8
-	stmneia r0!, {r1, r3}
-        subne   r2, r2, #8
-	tst	r0, #16
-	stmneia r0!, {r1, r3}
-        subne   r2, r2, #16
-        stmneia r0!, {r1, r3}
+#elif MEMSET_WRITE_ALIGN_BYTES == 32
+	beq	2f
+	tst     r4, #4
+	sub	r2, r2, r4
+	strne	r1, [r0], #4
+	tst     r4, #8
+	stmiane r0!, {r1, r3}
+	cmp	r4, #16
+	stmiage r0!, {r1, r3}
+	stmiage r0!, {r1, r3}
+#endif
 	cmp	r2, #64
-	blt	9f
-.endif
+	blt	4f
+#endif
+
+2:	mov	r4, r1
+	push	{r5}
+	mov	r5, r1
 
 3:	stmia	r0!, {r1, r3, r4, r5}
 	subs	r2, r2, #64		/* Thumb16 */
 	stmia	r0!, {r1, r3, r4, r5}
-	cmp     r2, #64
+	cmp	r2, #64
 	stmia	r0!, {r1, r3, r4, r5}
 	stmia	r0!, {r1, r3, r4, r5}
 	bge	3b
-#endif
 
+	pop	{r5}
 	/* Early exit if there are 0 bytes left. */
-THUMB(	cbz	r2, 8f	)
+THUMB(	cbz	r2, 7f	)
 ARM(	teq	r2, #0	)
-ARM(	beq	8f	)
-9:	ldmfd	sp!, {r5}
+ARM(	beq	7f	)
 
 	/* Handle 8-64 bytes. */
-7:	bic	r4, r2, #7
+4:	bic	r4, r2, #7
 	subs	r2, r2, r4
 	rsb	r4, r4, #64
 	/* The stmia instruction is 32-bit for ARM, 16-bit for Thumb2. */
@@ -129,37 +100,47 @@ ARM(	lsrs	r4, r4, #1	)
 	stmia	r0!, {r1, r3}
 	stmia	r0!, {r1, r3}
 	stmia	r0!, {r1, r3}
-	ldmfd	sp!, {r4}
+	pop	{r4}
 
-4:	cmp	r2, #4
+5:	cmp	r2, #4
 	strge	r1, [r0], #4
 	/* Early exit for multiple of 4 size. */
-	tst	r2, #3
+	ands	r2, r2, #3
 	moveq	r0, ip
-	moveq	pc, lr
-/*
- * When we get here, we've got less than 4 bytes to zero.  We
- * may have an unaligned pointer as well.
- */
-5:	tst	r2, #2
-	strneb	r1, [r0], #1
-	strneb	r1, [r0], #1
-	tst	r2, #1
-	strneb	r1, [r0], #1
-	mov	r0, ip
-	mov	pc, lr
+	bxeq	lr
 
-8:	ldmfd	sp!, {r5}
-	ldmfd	sp!, {r4}
+	/*
+	 * At this point there are 1, 2 or 3 bytes,
+	 * and the destination is aligned.
+	 */
+6:	cmp	r2, #2
+	strhge	r1, [r0], #2
+	strbne	r1, [r0]
 	mov	r0, ip
-	mov	pc, lr
+	bx	lr
 
-6:	subs	r2, r2, #4		@ 1 do we have enough
-	blt	5b			@ 1 bytes to align with?
-	cmp	r3, #2			@ 1
-	strltb	r1, [r0], #1		@ 1
-	strleb	r1, [r0], #1		@ 1
-	strb	r1, [r0], #1		@ 1
-	add	r2, r2, r3		@ 1 (r2 = r2 - (4 - r3))
+7:	pop	{r4}
+	mov	r0, ip
+	bx	lr
+
+8:	cmp	r2, #4
+	blt	9f
+	cmp	r3, #2
+	sub	r2, r2, #4
+	strble	r1, [r0]
+	strble	r1, [r0, #1]
+	addle	r0, r0, #2
+	add	r2, r2, r3
+	strbne	r1, [r0], #1
 	b	1b
+
+	/* 0 to 3 bytes left. */
+9:	cmp	r2, #2
+	strbge  r1, [r0]
+	strbge  r1, [r0, #1]
+	addge	r0, r0, #2
+	tst	r2, #1
+	strbne  r1, [r0]
+	mov	r0, ip
+	bx      lr
 ENDPROC(kernel_memset)

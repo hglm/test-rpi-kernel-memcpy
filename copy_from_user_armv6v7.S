@@ -100,6 +100,7 @@
 	.endm
 
 	.text
+	.syntax unified
 
 /* Prototype: void *copy_from_user(void *dest, const void *src, size_t n); */
 

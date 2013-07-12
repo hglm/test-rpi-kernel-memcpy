@@ -54,12 +54,12 @@ int memcpy_mask[NU_MEMCPY_VARIANTS];
 int memset_mask[NU_MEMSET_VARIANTS];
 int test_alignment;
 
-static memcpy_func_type copy_page_wrapper(void *dest, const void *src, size_t n) {
+static void *copy_page_wrapper(void *dest, const void *src, size_t n) {
 	kernel_copy_page(dest, src);
 	return dest;
 }
 
-static memcpy_func_type copy_page_orig_wrapper(void *dest, const void *src, size_t n) {
+static void *copy_page_orig_wrapper(void *dest, const void *src, size_t n) {
 	kernel_copy_page_orig(dest, src);
 	return dest;
 }
@@ -84,12 +84,12 @@ static const memcpy_func_type memcpy_variant[NU_MEMCPY_VARIANTS] = {
     copy_page_wrapper
 };
 
-static memset_func_type memzero_orig_wrapper(void *dest, int c, size_t n) {
+static void *memzero_orig_wrapper(void *dest, int c, size_t n) {
     __kernel_memzero_orig(dest, n);
     return dest;
 }
 
-static memset_func_type memzero_wrapper(void *dest, int c, size_t n) {
+static void *memzero_wrapper(void *dest, int c, size_t n) {
     __kernel_memzero(dest, n);
     return dest;
 }
@@ -105,7 +105,7 @@ static const char *memset_variant_name[NU_MEMSET_VARIANTS] = {
     "new libc memset (align = 32)",
 };
 
-static const memcpy_func_type memset_variant[NU_MEMSET_VARIANTS] = {
+static const memset_func_type memset_variant[NU_MEMSET_VARIANTS] = {
     memset,
     kernel_memset_orig,
     kernel_memset,

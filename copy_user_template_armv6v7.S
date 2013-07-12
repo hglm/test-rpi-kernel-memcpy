@@ -120,7 +120,7 @@
  * equal to about 96 bytes.
  */
 #define FAST_PATH_SIZE_THRESHOLD 95
-#define DISABLE_WRITE_ALIGNMENT
+/* #define DISABLE_WRITE_ALIGNMENT */
 #endif
 
 #ifdef COPY_FUNCTION_TO_USER
@@ -250,7 +250,7 @@
 		 */
 		/* Correct the count. */
 		adds	r2, r2, #4
-		stmfd	sp!, {r5 - r9}
+		push	{r5-r9}
 		cmp	r2, #32
 		mov	r8, r3
 		/* Jump to the tail if there are too few bytes. */
@@ -269,13 +269,13 @@
 		 * ip holds the aligned source base address.
 		 */
 37:		tst	r3, #3
-		stmdb	sp!, {r4, lr}
+		push	{r4, lr}
 	PLD(	mov	r3, ip			)
 	PLD(	pld	[ip, #L1_CACHE_BYTES]	)
 		bne	33b	/* Unaligned. */
 
 		subs	r2, r2, #32
-		stmfd	sp!, {r5 - r9}
+		push	{r5-r9}
 		mov	r8, r3
 45:
 #else	/* defined(OPTIMIZE_WITH_FAST_PATH) */
@@ -284,7 +284,7 @@
 		 * when the fast path is disabled.
 		 * ip holds the aligned source base address.
 		 */
-37:		stmdb	sp!, {r4, lr}
+37:		push	{r4, lr}
 
 33:		subs	r2, r2, #4
 	PLD(	mov	r3, ip			)
@@ -296,7 +296,7 @@
 		bne	10f
 
 1:		subs	r2, r2, #(28)
-		stmfd	sp!, {r5 - r9}
+		push	{r5-r9}
 	PLD(	mov	r8, r3			)
 		/* Correct the count when jumping to the tail. */
 		addlt	r2, r2, #32
@@ -306,7 +306,7 @@
 #ifndef DISABLE_WRITE_ALIGNMENT
 	CALGN(	ands	ip, r0, #(WRITE_ALIGN_BYTES - 1)	)
 	CALGN(	rsb	r3, ip, #WRITE_ALIGN_BYTES		)
-	CALGN(	sbcnes	r4, r3, r2		)  @ C is always set here
+	CALGN(	sbcsne	r4, r3, r2		)  @ C is always set here
 #if WRITE_ALIGN_BYTES == 8
 		/*
 		 * For write alignment of 8, it is quickest to simply
@@ -317,12 +317,16 @@
 	CALGN(	str1wcond r0, r4, cc		)
 #else
 	CALGN(	bcs	2f			)
-	CALGN(	adr	r4, 6f			)
+ARM(	CALGN(	adr	r4, 6f			)	)
 #if WRITE_ALIGN_BYTES == 16
 	CALGN(  add	ip, ip, #16		)
 #endif
 	CALGN(	subs	r2, r2, r3		)  @ C gets set
-	CALGN(	add	pc, r4, ip		)
+ARM(	CALGN(	add	pc, r4, ip		)	)
+		/* On Thumb2, we need to use relative addressing. */
+THUMB(	CALGN(	add	r4, ip, #(6f - 2f)	)	)
+THUMB(	CALGN(	add	pc, pc, r4		)	)
+THUMB(	CALGN(	nop				)	)
 #endif
 #endif
 
@@ -441,7 +445,7 @@
 	CALGN(	bcs	2b	)
 #endif
 
-7:		ldmfd	sp!, {r5 - r9}
+7:		pop	{r5-r9}
 
 8:		movs	r2, r2, lsl #31
 		ldr1b	r1, r3, ne, abort=21f
@@ -451,7 +455,7 @@
 		str1b	r0, r4, cs, abort=21f
 		str1b	r0, ip, cs, abort=21f
 
-		ldmfd	sp!, {r4, lr}
+		pop	{r4, lr}
 		exit_no_regs
 
 		/* Unaligned destination. r3 is preload base address. */
@@ -483,7 +487,7 @@
 #ifndef DISABLE_WRITE_ALIGNMENT_FOR_UNALIGNED_CASE
 	CALGN(	ands	ip, r0, #(WRITE_ALIGN_BYTES - 1)	)
 	CALGN(	rsb	ip, ip, #WRITE_ALIGN_BYTES		)
-	CALGN(	sbcnes	r4, ip, r2		)  @ C is always set here
+	CALGN(	sbcsne	r4, ip, r2		)  @ C is always set here
 	CALGN(	subcc	r2, r2, ip		)
 #if WRITE_ALIGN_BYTES == 8
 		/*
@@ -502,7 +506,7 @@
 		 * At this point the aligned base address used for early
 		 * preloads is stored in r3.
 		 */
-11:		stmfd	sp!, {r5 - r10}
+11:		push {r5-r10}
 
 	PLD(	add	r10, r1, #(PREFETCH_DISTANCE * L1_CACHE_BYTES)	)
 	PLD(	subs	r2, r2, #(PREFETCH_DISTANCE * L1_CACHE_BYTES)	)
@@ -555,7 +559,7 @@
 	PLD(	cmn	r2, #(PREFETCH_DISTANCE * L1_CACHE_BYTES)	)
 	PLD(	bge	13b				)
 
-		ldmfd	sp!, {r5 - r10}
+		pop	{r5-r10}
 
 14:		ands	ip, r2, #28
 		beq	16f
@@ -591,11 +595,10 @@
  * the exit macro.
  */
 
-	.macro	copy_abort_preamble
-19:	ldmfd	sp!, {r5 - r10}
-	b	21f
-20:	ldmfd	sp!, {r5 - r9}
-21:	ldmfd	sp!, {r4, lr}
+		.macro	copy_abort_preamble
+19:		pop {r5-r10}
+		b	21f
+20:		pop {r5-r9}
+21:		pop {r4, lr}
 22:
-	.endm
-
+		.endm

@@ -87,6 +87,7 @@
 	.endm
 
 	.text
+	.syntax unified
 
 /* Prototype: void *copy_to_user(void *dest, const void *src, size_t n); */
 
